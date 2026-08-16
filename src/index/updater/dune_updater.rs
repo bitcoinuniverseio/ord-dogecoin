@@ -14,7 +14,6 @@ struct Allocation {
   id: u128,
   mint: Option<Terms>,
   dune: Dune,
-  premine: u128,
   spacers: u32,
   symbol: Option<char>,
   turbo: bool,
@@ -149,7 +148,6 @@ impl<'a, 'db, 'tx> DuneUpdater<'a, 'tx> {
                 divisibility: etching.divisibility.unwrap_or_default(),
                 id: u128::from(self.height) << 16 | u128::from(index),
                 dune,
-                premine: etching.premine.unwrap_or_default(),
                 spacers: etching.spacers.unwrap_or_default(),
                 symbol: etching.symbol,
                 mint: etching.terms.map(|mint| Terms {
@@ -299,7 +297,6 @@ impl<'a, 'db, 'tx> DuneUpdater<'a, 'tx> {
         id,
         mint,
         dune,
-        premine,
         spacers,
         symbol,
         turbo,

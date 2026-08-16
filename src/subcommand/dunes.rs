@@ -44,7 +44,7 @@ pub(crate) fn run(options: Options) -> SubcommandResult {
       .map(
         |(
           id,
-          entry @ DuneEntry {
+          _entry @ DuneEntry {
             block,
             burned,
             divisibility,

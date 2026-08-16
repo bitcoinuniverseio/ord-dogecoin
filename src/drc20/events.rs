@@ -12,6 +12,7 @@ pub enum OperationType {
     Transfer,
 }
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[expect(dead_code, reason = "serialized legacy receipt compatibility type")]
 pub struct Receipt {
     pub inscription_id: InscriptionId,
     pub inscription_number: i64,

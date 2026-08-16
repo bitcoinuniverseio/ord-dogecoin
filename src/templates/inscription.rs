@@ -13,6 +13,7 @@ pub(crate) struct InscriptionHtml {
   pub(crate) next: Option<InscriptionId>,
   pub(crate) output: TxOut,
   pub(crate) previous: Option<InscriptionId>,
+  #[expect(dead_code, reason = "retained in the legacy inscription template contract")]
   pub(crate) dune: Option<SpacedDune>,
   pub(crate) sat: Option<Sat>,
   pub(crate) satpoint: SatPoint,

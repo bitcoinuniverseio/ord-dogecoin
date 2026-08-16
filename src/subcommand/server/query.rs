@@ -18,6 +18,7 @@ impl FromStr for Block {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[expect(dead_code, reason = "retained for legacy inscription route decoding")]
 pub(crate) enum Inscription {
     Id(InscriptionId),
     Number(i32),
