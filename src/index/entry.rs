@@ -109,6 +109,10 @@ impl DuneEntry {
       if self.mints >= cap {
         return Err(MintError::Cap(cap));
       }
+    } else {
+      if self.mints == u128::MAX {
+        return Err(MintError::Cap(u128::MAX));
+      }
     }
 
     Ok(terms.limit.unwrap_or_default())

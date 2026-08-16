@@ -30,7 +30,7 @@ jobs:
       - name: Format
         run: rustfmt --check tests/compatibility.rs
       - name: Clippy
-        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --all-features
+        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --all-features
       - name: Check for forbidden words
         run: ./bin/forbid
 
@@ -44,7 +44,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-      - run: cargo test --locked --workspace --test compatibility
+      - name: Check production library and binaries
+        run: cargo check --locked --workspace --lib --bins --all-features
+      - name: Test Dogecoin protocol compatibility
+        run: cargo test --locked --test compatibility
+      - name: Test canonical authority API contract
+        run: cargo test --locked --test authority-api-contract
 
   docs:
     runs-on: ubuntu-latest
@@ -58,12 +63,13 @@ jobs:
           cargo install --locked mdbook-linkcheck --version 0.7.7
       - run: mdbook build docs
 
-  core:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
-      - name: Install Dogecoin-compatible Core fixture
-        run: ./bin/install-bitcoin-core-linux
-      - run: cargo test --locked --workspace --test compatibility
+      - name: Build production binary
+        run: cargo build --locked --release --bin ord
+      - name: Smoke test production binary
+        run: target/release/ord --version
