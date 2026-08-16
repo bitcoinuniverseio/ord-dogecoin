@@ -19,7 +19,7 @@ impl Server {
     Self { network, state }
   }
 
-  fn state(&self) -> MutexGuard<State> {
+  fn state(&self) -> MutexGuard<'_, State> {
     self.state.lock().unwrap()
   }
 
@@ -142,7 +142,7 @@ impl Api for Server {
   }
 
   fn get_block(&self, block_hash: BlockHash, verbose: bool) -> Result<String, jsonrpc_core::Error> {
-    assert_eq!(verbose, false, "Verbosity level {verbose} is unsupported");
+    assert!(!verbose, "Verbosity level {verbose} is unsupported");
     match self.state().blocks.get(&block_hash) {
       Some(block) => Ok(hex::encode(serialize(block))),
       None => Err(Self::not_found()),
