@@ -21,7 +21,6 @@ enum Origin {
 
 pub(super) struct InscriptionUpdater<'a, 'tx> {
   flotsam: Vec<Flotsam>,
-  pub(super) index : &'a Index, // hack
   pub(super) operations: HashMap<Txid, Vec<InscriptionOp>>,
   height: u32,
   id_to_satpoint: &'a mut Table<'tx, &'static InscriptionIdValue, &'static SatPointValue>,
@@ -48,7 +47,6 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
   pub(super) fn new(
-    index : &'a Index, // hack
     height: u32,
     id_to_satpoint: &'a mut Table<'tx, &'static InscriptionIdValue, &'static SatPointValue>,
     id_to_txids: &'a mut Table<'tx, &'static InscriptionIdValue, &'static [u8]>,
@@ -79,7 +77,6 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
     Ok(Self {
       flotsam: Vec::new(),
-      index, // hack
       operations: HashMap::new(),
       height,
       id_to_satpoint,
@@ -370,7 +367,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     input_sat_ranges: Option<&VecDeque<(u64, u64)>>,
     flotsam: Flotsam,
     new_satpoint: SatPoint,
-    tx: &Transaction // hack
+    _tx: &Transaction // hack
   ) -> Result {
     let inscription_id = flotsam.inscription_id.store();
 

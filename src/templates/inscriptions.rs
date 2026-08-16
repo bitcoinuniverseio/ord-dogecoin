@@ -8,6 +8,7 @@ pub(crate) struct InscriptionsHtml {
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[expect(dead_code, reason = "retained for the legacy inscriptions JSON contract")]
 pub struct InscriptionsJson {
   pub inscriptions: Vec<InscriptionId>,
 }

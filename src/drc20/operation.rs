@@ -40,6 +40,7 @@ pub enum Operation {
 }
 
 impl Operation {
+  #[expect(dead_code, reason = "retained for legacy receipt serialization")]
   pub fn op_type(&self) -> OperationType {
     match self {
       Operation::Deploy(_) => OperationType::Deploy,

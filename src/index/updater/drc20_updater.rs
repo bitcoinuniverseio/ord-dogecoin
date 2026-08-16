@@ -17,7 +17,6 @@ use crate::drc20::{
   Event, InscribeTransferEvent, Message, Mint, MintEvent, Num, Tick, TokenInfo, Transfer,
   TransferEvent, TransferInfo, TransferableLog,
 };
-use crate::subcommand::Output;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExecutionMessage {
@@ -416,7 +415,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
     _context: BlockContext,
     msg: &ExecutionMessage,
   ) -> Result<Event, errors::Error<DRC20Error>> {
-    let mut transferable = Self::get_transferable_by_id(self, &msg.from, &msg.inscription_id)
+    let transferable = Self::get_transferable_by_id(self, &msg.from, &msg.inscription_id)
       .map_err(|e| LedgerError(e))?
       .ok_or(DRC20Error::TransferableNotFound(msg.inscription_id))?;
     let amt = Into::<Num>::into(transferable.amount);
@@ -449,16 +448,8 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
 
     Self::update_token_balance(self, &msg.from, from_balance).map_err(|e| LedgerError(e))?;
 
-    // redirect receiver to sender if transfer to coinbase.
-    let mut out_msg = None;
-
-    let to_script_key = if msg.to.clone().is_none() {
-      out_msg =
-        Some("redirect receiver to sender, reason: transfer inscription to coinbase".to_string());
-      msg.from.clone()
-    } else {
-      msg.to.clone().unwrap()
-    };
+    // Redirect the receiver to the sender if the transfer targets coinbase.
+    let to_script_key = msg.to.clone().unwrap_or_else(|| msg.from.clone());
 
     // update to key balance.
     let mut to_balance = Self::get_balance(self, &to_script_key, &tick)
@@ -531,6 +522,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         )
     }
 
+    #[expect(dead_code, reason = "retained for the legacy DRC-20 range index")]
     fn get_transferable_by_tick(
         &self,
         script: &ScriptKey,
