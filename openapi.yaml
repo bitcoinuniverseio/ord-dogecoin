@@ -10,6 +10,77 @@ servers:
     description: Wonky Prod Server
 
 paths:
+  /api/v1/funding/{address}:
+    get:
+      summary: Get confirmed cardinal funding proofs
+      operationId: getCardinalFundingProofs
+      parameters:
+        - name: address
+          in: path
+          required: true
+          description: Canonically encoded Dogecoin address
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of inputs (1-50, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: Complete confirmed cardinal funding inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, block_count, block_hash, address, inventory_complete, total_count, truncated, inputs]
+                properties:
+                  chain:
+                    type: string
+                    enum: [dogecoin]
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  address:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                    enum: [true]
+                    description: The authoritative index is complete at block_count; this does not mean the bounded input page is untruncated.
+                  total_count:
+                    type: integer
+                    minimum: 0
+                    description: Complete number of confirmed cardinal UTXOs before applying limit.
+                  truncated:
+                    type: boolean
+                    description: True when total_count is greater than the number of returned inputs.
+                  inputs:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        [txid, vout, value_sats, script_pubkey, raw_previous_transaction, confirmations]
+                      properties:
+                        txid:
+                          type: string
+                        vout:
+                          type: integer
+                          minimum: 0
+                        value_sats:
+                          type: string
+                        script_pubkey:
+                          type: string
+                        raw_previous_transaction:
+                          type: string
+                        confirmations:
+                          type: integer
+                          minimum: 1
+
   /block-count:
     get:
       summary: Get block count
@@ -848,4 +919,3 @@ components:
           type: array
           items:
             type: string
-

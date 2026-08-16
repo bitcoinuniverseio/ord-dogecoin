@@ -3,7 +3,7 @@
 use {
   api::Api,
   bitcoin::{
-    blockdata::script,
+    blockdata::{constants::COIN_VALUE, script},
     consensus::encode::{deserialize, serialize},
     hash_types::BlockHash,
     hashes::Hash,
@@ -115,6 +115,8 @@ pub fn spawn() -> Handle {
 pub struct TransactionTemplate<'a> {
   pub fee: u64,
   pub inputs: &'a [(usize, usize, usize)],
+  pub op_return: Option<Script>,
+  pub op_return_index: Option<usize>,
   pub output_values: &'a [u64],
   pub outputs: usize,
   pub witness: Witness,
@@ -147,6 +149,8 @@ impl<'a> Default for TransactionTemplate<'a> {
     Self {
       fee: 0,
       inputs: &[],
+      op_return: None,
+      op_return_index: None,
       output_values: &[],
       outputs: 1,
       witness: Witness::default(),
@@ -165,7 +169,7 @@ impl Handle {
     format!("http://127.0.0.1:{}", self.port)
   }
 
-  fn state(&self) -> MutexGuard<State> {
+  fn state(&self) -> MutexGuard<'_, State> {
     self.state.lock().unwrap()
   }
 

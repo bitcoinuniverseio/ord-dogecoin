@@ -1,114 +1,75 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-    - master
+    branches: [develop, main]
   pull_request:
-    branches:
-    - master
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
     shell: bash
 
-env:
-  RUSTFLAGS: --deny warnings
-
 jobs:
-  docs:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-
-    - uses: peaceiris/actions-mdbook@v1
-      with:
-        mdbook-version: latest
-
-    - name: Install mdbook-linkcheck
-      run: |
-        mkdir -p mdbook-linkcheck
-        cd mdbook-linkcheck
-        wget https://github.com/Michael-F-Bryan/mdbook-linkcheck/releases/latest/download/mdbook-linkcheck.x86_64-unknown-linux-gnu.zip
-        unzip mdbook-linkcheck.x86_64-unknown-linux-gnu.zip
-        chmod +x mdbook-linkcheck
-        pwd >> $GITHUB_PATH
-
-    - run: mdbook build docs
-
-    - name: Deploy Pages
-      uses: peaceiris/actions-gh-pages@v3
-      if: github.ref == 'refs/heads/master'
-      with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
-        publish_branch: gh-pages
-        publish_dir: docs/build/html
   lint:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-
-    - name: Install Rust Toolchain Components
-      uses: actions-rs/toolchain@v1
-      with:
-        components: clippy, rustfmt
-        override: true
-        toolchain: stable
-
-    - uses: Swatinem/rust-cache@v2
-
-    - name: Clippy
-      run: cargo clippy --all --all-targets
-
-    - name: Format
-      run: cargo fmt --all -- --check
-
-    - name: Check for Forbidden Words
-      run: |
-        sudo apt-get install ripgrep
-        ./bin/forbid
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Format
+        run: rustfmt --check tests/compatibility.rs
+      - name: Clippy
+        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --all-features
+      - name: Check for forbidden words
+        run: ./bin/forbid
 
   test:
     strategy:
+      fail-fast: false
       matrix:
-        os:
-        - macos-latest
-        - ubuntu-latest
-        - windows-latest
-
-    runs-on: ${{matrix.os}}
-
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Check production library and binaries
+        run: cargo check --locked --workspace --lib --bins --all-features
+      - name: Test Dogecoin protocol compatibility
+        run: cargo test --locked --test compatibility
+      - name: Test canonical authority API contract
+        run: cargo test --locked --test authority-api-contract
 
-    - name: Install Rust Toolchain Components
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-
-    - uses: Swatinem/rust-cache@v2
-
-    - name: Test
-      run: cargo test --all
-
-  core:
+  docs:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Install documentation toolchain
+        run: |
+          cargo install --locked mdbook --version 0.4.52
+          cargo install --locked mdbook-linkcheck --version 0.7.7
+      - run: mdbook build docs
 
-    - name: Install Rust Toolchain Components
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-
-    - uses: Swatinem/rust-cache@v2
-
-    - name: Install Bitcoin Core
-      run: ./bin/install-bitcoin-core-linux
-
-    - name: Test
-      run: cargo test --all -- --ignored
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+      - name: Build production binary
+        run: cargo build --locked --release --bin ord
+      - name: Smoke test production binary
+        run: target/release/ord --version

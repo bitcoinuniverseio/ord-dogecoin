@@ -9,6 +9,11 @@ use {
   },
   super::*,
   crate::{
+    authority_api::{
+      checked_funding_limit, checked_inventory_limit, Drc20TransferableInventory,
+      Drc20TransferableInventoryItem, FundingInventory, FundingInventoryItem, InscriptionInventory,
+      InscriptionInventoryItem, InventoryLocation,
+    },
     drc20::{script_key::ScriptKey, Tick},
     page_config::PageConfig,
     templates::{
@@ -21,13 +26,12 @@ use {
     },
   },
   axum::{
-    body,
+    body::Body,
     extract::{Extension, Json, Path, Query},
-    headers::UserAgent,
     http::{header, HeaderMap, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Redirect, Response},
     routing::get,
-    Router, TypedHeader,
+    Router,
   },
   axum_server::Handle,
   rust_embed::RustEmbed,
@@ -125,6 +129,11 @@ struct UtxoBalanceQuery {
 }
 
 #[derive(Deserialize)]
+struct FundingInventoryQuery {
+  limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 struct Drc20TickInfoQuery {
   show_holder: Option<bool>,
 }
@@ -145,6 +154,12 @@ struct OutputsQuery {
 #[derive(Deserialize)]
 struct JsonQuery {
   json: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct InscriptionInventoryQuery {
+  cursor: Option<u64>,
+  limit: Option<usize>,
 }
 
 enum BlockQuery {
@@ -294,6 +309,15 @@ impl Server {
         .route("/feed.xml", get(Self::feed))
         .route("/input/:block/:transaction/:input", get(Self::input))
         .route("/inscription/:inscription_id", get(Self::inscription))
+        .route(
+          "/api/v1/inscriptions",
+          get(Self::inscription_inventory),
+        )
+        .route(
+          "/api/v1/drc20/transferables",
+          get(Self::drc20_transferable_inventory),
+        )
+        .route("/api/v1/funding/:address", get(Self::funding_inventory))
         .route("/inscriptions", get(Self::inscriptions))
         .route("/inscriptions/:from", get(Self::inscriptions_from))
         .route("/shibescription/:inscription_id", get(Self::inscription))
@@ -517,12 +541,7 @@ impl Server {
 
     let mut state = config.state();
 
-    let acceptor = state.axum_acceptor(Arc::new(
-      rustls::ServerConfig::builder()
-        .with_safe_defaults()
-        .with_no_client_auth()
-        .with_cert_resolver(state.resolver()),
-    ));
+    let acceptor = state.axum_acceptor(state.default_rustls_config());
 
     tokio::spawn(async move {
       while let Some(result) = state.next().await {
@@ -676,7 +695,7 @@ impl Server {
       }
 
       if !index.get_inscriptions_on_output(outpoint)?.is_empty() {
-        inscription_shibes += output.value as u128;
+        inscription_shibes += u128::from(output.value);
         if !show_unsafe {
           continue;
         }
@@ -684,7 +703,7 @@ impl Server {
 
       element_counter += 1;
 
-      total_shibes += output.value as u128;
+      total_shibes += u128::from(output.value);
 
       let confirmations = if let Some(block_hash_info) = index.get_transaction_blockhash(txid)? {
         block_hash_info.confirmations
@@ -1748,7 +1767,10 @@ impl Server {
         let outputs = tx.output.iter()
             .enumerate()  // Enumerate the iterator to get the index of each output
             .map(|(vout, _output)| {
-              let outpoint = OutPoint::new(txid, vout as u32);  // Create the OutPoint from txid and vout
+              let outpoint = OutPoint::new(
+                txid,
+                u32::try_from(vout).expect("transaction output index exceeds u32"),
+              );
               outpoint.to_string()  // Convert the OutPoint to a string
             })
             .collect::<Vec<_>>()
@@ -1903,7 +1925,10 @@ impl Server {
           let outputs = tx.output.iter()
             .enumerate()  // Enumerate the iterator to get the index of each output
             .map(|(vout, _output)| {
-              let outpoint = OutPoint::new(txid, vout as u32);  // Create the OutPoint from txid and vout
+              let outpoint = OutPoint::new(
+                txid,
+                u32::try_from(vout).expect("transaction output index exceeds u32"),
+              );
               outpoint.to_string()  // Convert the OutPoint to a string
             })
             .collect::<Vec<_>>()
@@ -2126,12 +2151,14 @@ impl Server {
     }
   }
 
-  async fn favicon(user_agent: Option<TypedHeader<UserAgent>>) -> ServerResult<Response> {
-    if user_agent
+  async fn favicon(headers: HeaderMap) -> ServerResult<Response> {
+    if headers
+      .get(header::USER_AGENT)
+      .and_then(|value| value.to_str().ok())
       .map(|user_agent| {
-        user_agent.as_str().contains("Safari/")
-          && !user_agent.as_str().contains("Chrome/")
-          && !user_agent.as_str().contains("Chromium/")
+        user_agent.contains("Safari/")
+          && !user_agent.contains("Chrome/")
+          && !user_agent.contains("Chromium/")
       })
       .unwrap_or_default()
     {
@@ -2203,7 +2230,7 @@ impl Server {
       &path
     })
     .ok_or_not_found(|| format!("asset {path}"))?;
-    let body = body::boxed(body::Full::from(content.data));
+    let body = Body::from(content.data);
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     Ok(
       Response::builder()
@@ -2319,7 +2346,7 @@ impl Server {
     Some((headers, inscription.into_body()?))
   }
 
-  pub(super) fn preview_content_security_policy(
+  fn preview_content_security_policy(
     media: Media,
     csp: &Option<String>,
   ) -> ServerResult<[(HeaderName, HeaderValue); 1]> {
@@ -2503,6 +2530,281 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<PageHtml<InscriptionsHtml>> {
     Self::inscriptions_inner(page_config, index, None).await
+  }
+
+  async fn inscription_inventory(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<InscriptionInventoryQuery>,
+  ) -> ServerResult<Response> {
+    let limit = checked_inventory_limit(query.limit)
+      .map_err(|message| ServerError::BadRequest(message.to_string()))?;
+
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let subsidy_schedule = fs::read(
+      env::var("SUBSIDIES_PATH")
+        .map_err(|error| ServerError::BadRequest(error.to_string()))?,
+    )
+    .map_err(Error::from)?;
+    let subsidy_schedule_hash =
+      bitcoin::hashes::sha256::Hash::hash(&subsidy_schedule).to_string();
+    let (inscription_ids, next_cursor, _) =
+      index.get_latest_inscriptions_with_prev_and_next(limit, query.cursor)?;
+    let mut inscriptions = Vec::with_capacity(inscription_ids.len());
+
+    for inscription_id in inscription_ids {
+      let inscription = index
+        .get_inscription_by_id(inscription_id)?
+        .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+      let entry = index
+        .get_inscription_entry(inscription_id)?
+        .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+      let satpoint = index
+        .get_inscription_satpoint_by_id(inscription_id)?
+        .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+      let content_type = inscription.content_type().map(str::to_owned);
+      let content_length = inscription.content_length();
+      let location = if satpoint.outpoint == OutPoint::null() {
+        None
+      } else {
+        let output = index
+          .get_transaction(satpoint.outpoint.txid)?
+          .and_then(|transaction| {
+            transaction
+              .output
+              .into_iter()
+              .nth(usize::try_from(satpoint.outpoint.vout).ok()?)
+          });
+        output.map(|output| InventoryLocation {
+          txid: satpoint.outpoint.txid.to_string(),
+          vout: satpoint.outpoint.vout,
+          offset: satpoint.offset.to_string(),
+          value: output.value.to_string(),
+          address: page_config
+            .chain
+            .address_from_script(&output.script_pubkey)
+            .ok()
+            .map(|address| address.to_string()),
+          script_pubkey: hex::encode(output.script_pubkey.as_bytes()),
+        })
+      };
+
+      inscriptions.push(InscriptionInventoryItem {
+        inscription_id: inscription_id.to_string(),
+        inscription_number: entry.inscription_number.to_string(),
+        genesis_height: entry.height,
+        timestamp: entry.timestamp,
+        content_type,
+        content_length,
+        subsidy_sats: Height(entry.height).subsidy().to_string(),
+        location,
+      });
+    }
+
+    Ok(
+      Json(InscriptionInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        subsidy_schedule_hash,
+        inventory_complete: true,
+        next_cursor: next_cursor.map(|cursor| cursor.to_string()),
+        inscriptions,
+      })
+      .into_response(),
+    )
+  }
+
+  async fn drc20_transferable_inventory(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+  ) -> ServerResult<Response> {
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let mut blocks = HashMap::<u32, Block>::new();
+    let mut transferables = Vec::new();
+
+    for transferable in index.get_drc20_transferables()? {
+      let token = index
+        .get_drc20_token_info(&transferable.tick)?
+        .ok_or_not_found(|| format!("DRC-20 token {}", transferable.tick))?;
+      let entry = index
+        .get_inscription_entry(transferable.inscription_id)?
+        .ok_or_not_found(|| {
+          format!("inscription {}", transferable.inscription_id)
+        })?;
+      let satpoint = index
+        .get_inscription_satpoint_by_id(transferable.inscription_id)?
+        .ok_or_not_found(|| {
+          format!("inscription {}", transferable.inscription_id)
+        })?;
+      if !blocks.contains_key(&entry.height) {
+        let block = index
+          .get_block_by_height(entry.height)?
+          .ok_or_not_found(|| format!("block {}", entry.height))?;
+        blocks.insert(entry.height, block);
+      }
+      let transaction_index = blocks[&entry.height]
+        .txdata
+        .iter()
+        .position(|transaction| transaction.txid() == transferable.inscription_id.txid)
+        .ok_or_not_found(|| {
+          format!("inscription transaction {}", transferable.inscription_id.txid)
+        })?;
+      let location = if satpoint.outpoint == OutPoint::null() {
+        None
+      } else {
+        let output = index
+          .get_transaction(satpoint.outpoint.txid)?
+          .and_then(|transaction| {
+            transaction
+              .output
+              .into_iter()
+              .nth(usize::try_from(satpoint.outpoint.vout).ok()?)
+          });
+        output.map(|output| InventoryLocation {
+          txid: satpoint.outpoint.txid.to_string(),
+          vout: satpoint.outpoint.vout,
+          offset: satpoint.offset.to_string(),
+          value: output.value.to_string(),
+          address: page_config
+            .chain
+            .address_from_script(&output.script_pubkey)
+            .ok()
+            .map(|address| address.to_string()),
+          script_pubkey: hex::encode(output.script_pubkey.as_bytes()),
+        })
+      };
+
+      transferables.push(Drc20TransferableInventoryItem {
+        ticker: transferable.tick.to_string(),
+        amount_atomic: transferable.amount.to_string(),
+        decimals: token.decimal,
+        max_atomic: token.supply.to_string(),
+        limit_atomic: token.limit_per_mint.to_string(),
+        transfer_inscription_id: transferable.inscription_id.to_string(),
+        inscription_number: transferable.inscription_number.to_string(),
+        owner_address: transferable.owner.to_string(),
+        genesis_height: entry.height,
+        transaction_index: u32::try_from(transaction_index)
+          .map_err(|error| ServerError::BadRequest(error.to_string()))?,
+        inscription_index: transferable.inscription_id.index,
+        location,
+      });
+    }
+
+    transferables.sort_by(|left, right| {
+      left
+        .genesis_height
+        .cmp(&right.genesis_height)
+        .then(left.transaction_index.cmp(&right.transaction_index))
+        .then(left.inscription_index.cmp(&right.inscription_index))
+    });
+
+    Ok(
+      Json(Drc20TransferableInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        inventory_complete: true,
+        transferables,
+      })
+      .into_response(),
+    )
+  }
+
+  async fn funding_inventory(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(address): Path<String>,
+    Query(query): Query<FundingInventoryQuery>,
+  ) -> ServerResult<Response> {
+    let parsed =
+      Address::from_str(&address).map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let canonical_address = parsed.to_string();
+    if canonical_address != address {
+      return Err(ServerError::BadRequest(
+        "funding address must use its canonical encoding".to_string(),
+      ));
+    }
+    let limit = checked_funding_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let mut candidates = Vec::new();
+
+    for outpoint in index.get_account_outputs(canonical_address.clone())? {
+      if !index.get_inscriptions_on_output(outpoint)?.is_empty()
+        || !index.get_dune_balances_for_outpoint(outpoint)?.is_empty()
+      {
+        continue;
+      }
+      let transaction = index
+        .get_transaction(outpoint.txid)?
+        .ok_or_not_found(|| format!("{} funding transaction", outpoint.txid))?;
+      let output = transaction
+        .output
+        .get(usize::try_from(outpoint.vout).map_err(|error| ServerError::Internal(error.into()))?)
+        .ok_or_not_found(|| format!("{} funding output", outpoint))?;
+      let output_address = page_config
+        .chain
+        .address_from_script(&output.script_pubkey)
+        .ok();
+      if output_address.as_ref().map(ToString::to_string).as_deref()
+        != Some(canonical_address.as_str())
+      {
+        continue;
+      }
+      let confirmations = index
+        .get_transaction_blockhash(outpoint.txid)?
+        .and_then(|value| value.confirmations)
+        .unwrap_or(0);
+      if confirmations == 0 {
+        continue;
+      }
+      candidates.push(FundingInventoryItem {
+        txid: outpoint.txid.to_string(),
+        vout: outpoint.vout,
+        value_sats: output.value.to_string(),
+        script_pubkey: hex::encode(output.script_pubkey.as_bytes()),
+        raw_previous_transaction: hex::encode(bitcoin::consensus::encode::serialize(&transaction)),
+        confirmations,
+      });
+    }
+
+    candidates.sort_by(|left, right| {
+      right
+        .value_sats
+        .parse::<u64>()
+        .unwrap_or(0)
+        .cmp(&left.value_sats.parse::<u64>().unwrap_or(0))
+        .then_with(|| left.txid.cmp(&right.txid))
+        .then_with(|| left.vout.cmp(&right.vout))
+    });
+    let total_count = candidates.len();
+    let truncated = total_count > limit;
+    candidates.truncate(limit);
+
+    Ok(
+      Json(FundingInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        address: canonical_address,
+        inventory_complete: true,
+        total_count,
+        truncated,
+        inputs: candidates,
+      })
+      .into_response(),
+    )
   }
 
   async fn inscriptions_validate(
@@ -2809,7 +3111,7 @@ async fn process_inscriptions(
 }
 
 fn format_balance(balance: u128, decimal_places: u8) -> String {
-  let factor = 10u128.pow(decimal_places as u32);
+  let factor = 10u128.pow(u32::from(decimal_places));
   let integer_part = balance / factor; // Get the integer part
   let fractional_part = balance % factor; // Get the fractional part
 
