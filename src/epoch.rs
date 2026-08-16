@@ -1,5 +1,4 @@
 use super::*;
-use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -176,5 +175,4 @@ mod tests {
     assert_eq!(Epoch(100), 100);
   }
 }
-
 
