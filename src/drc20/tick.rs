@@ -131,6 +131,7 @@ pub fn max_script_tick_key(script: &ScriptKey) -> String {
   format!("{}_{}", script, LowerTick::max_hex())
 }
 
+#[expect(dead_code, reason = "retained for legacy serialized DRC-20 keys")]
 pub fn deserialize_script_tick_key(
   serialized: &str,
   network: Network,
