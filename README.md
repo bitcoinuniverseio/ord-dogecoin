@@ -24,6 +24,10 @@ You can find the API documentation [here](openapi.yaml).
 Most convenient way to view the API documentation is to use the [Swagger Editor](https://editor.swagger.io/).
 You can import the `openapi.yaml` file and view the API documentation via Import URL: `https://raw.githubusercontent.com/verydogelabs/wonky-ord-dogecoin/main/openapi.yaml`.
 
+### Universe authority inventory
+
+`GET /api/v1/funding/{address}?limit=20` returns confirmed cardinal UTXOs for a canonical Dogecoin address. Each item includes the exact atomic value, script, confirmations, and raw previous transaction so downstream services can independently verify the prevout. Outputs carrying inscriptions or Dunes are excluded. The endpoint requires `--index-transactions`; callers must apply any additional protocol reservations owned by downstream indexers before treating an output as spendable. `limit` is bounded to 1–50.
+
 ## Continuous verification
 
 CI validates the locked Dogecoin dependency graph, formatting, Clippy, and the maintained protocol compatibility suite in `tests/compatibility.rs` on Linux, macOS, and Windows. The suite exercises Dune identifiers plus Dunestone script encoding and decoding against the pinned `rust-dogecoin` API.

@@ -10,8 +10,8 @@ use {
   super::*,
   crate::{
     authority_api::{
-      checked_inventory_limit, Drc20TransferableInventory,
-      Drc20TransferableInventoryItem, InscriptionInventory,
+      checked_funding_limit, checked_inventory_limit, Drc20TransferableInventory,
+      Drc20TransferableInventoryItem, FundingInventory, FundingInventoryItem, InscriptionInventory,
       InscriptionInventoryItem, InventoryLocation,
     },
     drc20::{script_key::ScriptKey, Tick},
@@ -126,6 +126,11 @@ struct UtxoBalanceQuery {
   show_all: Option<bool>,
   show_unsafe: Option<bool>,
   value_filter: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct FundingInventoryQuery {
+  limit: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -312,6 +317,7 @@ impl Server {
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
         )
+        .route("/api/v1/funding/:address", get(Self::funding_inventory))
         .route("/inscriptions", get(Self::inscriptions))
         .route("/inscriptions/:from", get(Self::inscriptions_from))
         .route("/shibescription/:inscription_id", get(Self::inscription))
@@ -2707,6 +2713,91 @@ impl Server {
         block_hash: block_hash.to_string(),
         inventory_complete: true,
         transferables,
+      })
+      .into_response(),
+    )
+  }
+
+  async fn funding_inventory(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(address): Path<String>,
+    Query(query): Query<FundingInventoryQuery>,
+  ) -> ServerResult<Response> {
+    let parsed =
+      Address::from_str(&address).map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let canonical_address = parsed.to_string();
+    if canonical_address != address {
+      return Err(ServerError::BadRequest(
+        "funding address must use its canonical encoding".to_string(),
+      ));
+    }
+    let limit = checked_funding_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let mut candidates = Vec::new();
+
+    for outpoint in index.get_account_outputs(canonical_address.clone())? {
+      if !index.get_inscriptions_on_output(outpoint)?.is_empty()
+        || !index.get_dune_balances_for_outpoint(outpoint)?.is_empty()
+      {
+        continue;
+      }
+      let transaction = index
+        .get_transaction(outpoint.txid)?
+        .ok_or_not_found(|| format!("{} funding transaction", outpoint.txid))?;
+      let output = transaction
+        .output
+        .get(usize::try_from(outpoint.vout).map_err(|error| ServerError::Internal(error.into()))?)
+        .ok_or_not_found(|| format!("{} funding output", outpoint))?;
+      let output_address = page_config
+        .chain
+        .address_from_script(&output.script_pubkey)
+        .ok();
+      if output_address.as_ref().map(ToString::to_string).as_deref()
+        != Some(canonical_address.as_str())
+      {
+        continue;
+      }
+      let confirmations = index
+        .get_transaction_blockhash(outpoint.txid)?
+        .and_then(|value| value.confirmations)
+        .unwrap_or(0);
+      if confirmations == 0 {
+        continue;
+      }
+      candidates.push(FundingInventoryItem {
+        txid: outpoint.txid.to_string(),
+        vout: outpoint.vout,
+        value_sats: output.value.to_string(),
+        script_pubkey: hex::encode(output.script_pubkey.as_bytes()),
+        raw_previous_transaction: hex::encode(bitcoin::consensus::encode::serialize(&transaction)),
+        confirmations,
+      });
+    }
+
+    candidates.sort_by(|left, right| {
+      right
+        .value_sats
+        .parse::<u64>()
+        .unwrap_or(0)
+        .cmp(&left.value_sats.parse::<u64>().unwrap_or(0))
+        .then_with(|| left.txid.cmp(&right.txid))
+        .then_with(|| left.vout.cmp(&right.vout))
+    });
+    candidates.truncate(limit);
+
+    Ok(
+      Json(FundingInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        address: canonical_address,
+        inventory_complete: true,
+        inputs: candidates,
       })
       .into_response(),
     )
