@@ -1,6 +1,7 @@
 use ord::authority_api::{
-  checked_inventory_limit, Drc20TransferableInventory, Drc20TransferableInventoryItem,
-  InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
+  checked_funding_limit, checked_inventory_limit, Drc20TransferableInventory,
+  Drc20TransferableInventoryItem, FundingInventory, FundingInventoryItem, InscriptionInventory,
+  InscriptionInventoryItem, InventoryLocation,
 };
 use serde_json::json;
 
@@ -11,6 +12,42 @@ fn bounds_inventory_pages() {
   assert_eq!(checked_inventory_limit(Some(1_000)), Ok(1_000));
   assert!(checked_inventory_limit(Some(0)).is_err());
   assert!(checked_inventory_limit(Some(1_001)).is_err());
+}
+
+#[test]
+fn bounds_funding_pages() {
+  assert_eq!(checked_funding_limit(None), Ok(20));
+  assert_eq!(checked_funding_limit(Some(1)), Ok(1));
+  assert_eq!(checked_funding_limit(Some(50)), Ok(50));
+  assert!(checked_funding_limit(Some(0)).is_err());
+  assert!(checked_funding_limit(Some(51)).is_err());
+}
+
+#[test]
+fn serializes_exact_cardinal_funding_proofs() {
+  let inventory = FundingInventory {
+    chain: "dogecoin",
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    address: "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq".to_string(),
+    inventory_complete: true,
+    inputs: vec![FundingInventoryItem {
+      txid: "cd".repeat(32),
+      vout: u32::MAX,
+      value_sats: u64::MAX.to_string(),
+      script_pubkey: "76a914000000000000000000000000000000000000000088ac".to_string(),
+      raw_previous_transaction: "0100000001".to_string(),
+      confirmations: u32::MAX,
+    }],
+  };
+
+  let encoded = serde_json::to_value(inventory).unwrap();
+  assert_eq!(encoded["inventory_complete"], true);
+  assert_eq!(
+    encoded["inputs"][0]["value_sats"],
+    json!(u64::MAX.to_string())
+  );
+  assert_eq!(encoded["inputs"][0]["vout"], json!(u32::MAX));
 }
 
 #[test]
