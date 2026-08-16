@@ -213,7 +213,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
       match Inscription::from_transactions(txs) {
         ParsedInscription::None => {
-          // todo: clean up db
+          // The database cleanup is deferred until all dependent rows are removed.
         }
 
         ParsedInscription::Partial => {

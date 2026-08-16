@@ -2,11 +2,22 @@
 
 set -euo pipefail
 
-which rg > /dev/null
-
-! rg \
-  --glob '!bin/forbid' \
-  --glob '!docs/src/bounty/frequency.tsv' \
-  --ignore-case \
-  'dbg!|fixme|todo|xxx' \
-  .
+if command -v rg > /dev/null; then
+  ! rg \
+    --glob '!bin/forbid' \
+    --glob '!docs/src/bounty/frequency.tsv' \
+    --ignore-case \
+    'dbg!|fixme|todo|xxx' \
+    .
+else
+  ! git grep \
+    -I \
+    --ignore-case \
+    --line-number \
+    --extended-regexp \
+    'dbg!|fixme|todo|xxx' \
+    -- \
+    . \
+    ':(exclude)bin/forbid' \
+    ':(exclude)docs/src/bounty/frequency.tsv'
+fi
