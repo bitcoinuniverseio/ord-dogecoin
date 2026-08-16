@@ -17,8 +17,8 @@ use {
   indicatif::{ProgressBar, ProgressStyle},
   log::log_enabled,
   redb::{
-    Database, DatabaseError, MultimapTable, MultimapTableDefinition, ReadableMultimapTable,
-    ReadableTable, StorageError, Table, TableDefinition, WriteTransaction,
+    Database, DatabaseError, MultimapTable, MultimapTableDefinition, ReadableTable, StorageError,
+    Table, TableDefinition, WriteTransaction,
   },
   std::collections::HashMap,
   std::io::Cursor,
@@ -77,7 +77,8 @@ define_table! { SATPOINT_TO_INSCRIPTION_ID, &SatPointValue, &InscriptionIdValue 
 define_table! { SAT_TO_INSCRIPTION_ID, u64, &InscriptionIdValue }
 define_table! { SAT_TO_SATPOINT, u64, &SatPointValue }
 define_table! { STATISTIC_TO_COUNT, u64, u64 }
-define_table! { TRANSACTION_ID_TO_DUNE, &TxidValue, u128 }
+const TRANSACTION_ID_TO_DUNE: TableDefinition<&TxidValue, u128> =
+  TableDefinition::new("TRANSACTION_ID_TO_DUNE");
 define_table! { TRANSACTION_ID_TO_TRANSACTION, &TxidValue, &[u8] }
 define_table! { WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP, u32, u128 }
 define_table! { DRC20_BALANCES, &str, &[u8] }
@@ -231,7 +232,7 @@ impl Index {
     let index_sats;
     let index_transactions;
 
-    let database = match unsafe { Database::builder().open(&path) } {
+    let database = match Database::builder().open(&path) {
       Ok(database) => {
         {
           let tx = database.begin_read()?;
@@ -979,8 +980,8 @@ impl Index {
         drc20_token_holder
           .get(tick.to_lowercase().hex().as_str())?
           .flat_map(|result| {
-            result.into_iter().filter_map(|(scriptKey)| {
-              ScriptKey::from_str(scriptKey.value(), self.chain.network())
+            result.into_iter().filter_map(|script_key| {
+              ScriptKey::from_str(script_key.value(), self.chain.network())
             })
           })
           .collect(),
@@ -990,6 +991,7 @@ impl Index {
     }
   }
 
+  #[expect(dead_code, reason = "retained for the legacy paginated DRC-20 API")]
   pub(crate) fn get_drc20_transferable_by_range(
     &self,
     script: &ScriptKey,
@@ -1024,6 +1026,7 @@ impl Index {
     )
   }
 
+  #[expect(dead_code, reason = "retained for the legacy paginated DRC-20 API")]
   pub(crate) fn get_drc20_transferable_by_tick(
     &self,
     script: &ScriptKey,
@@ -1080,6 +1083,7 @@ impl Index {
     }
   }
 
+  #[expect(dead_code, reason = "retained for compatibility with legacy dune lookups")]
   pub(crate) fn get_etching(&self, txid: Txid) -> Result<Option<SpacedDune>> {
     if self.block_count().unwrap() >= self.first_dune_height {
       let rtx = self.database.begin_read()?;

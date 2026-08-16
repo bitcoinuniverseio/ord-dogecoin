@@ -14,12 +14,6 @@ pub mod subsidy;
 pub mod traits;
 pub mod wallet;
 
-fn print_json(output: impl Serialize) -> Result {
-  serde_json::to_writer_pretty(io::stdout(), &output)?;
-  println!();
-  Ok(())
-}
-
 #[derive(Debug, Parser)]
 pub(crate) enum Subcommand {
   #[command(about = "List all dune balances")]
@@ -78,18 +72,8 @@ impl Subcommand {
 #[derive(Serialize, Deserialize)]
 pub struct Empty {}
 
-pub(crate) trait Output: Send {
-  fn print_json(&self);
-}
+pub(crate) trait Output: Send {}
 
-impl<T> Output for T
-  where
-      T: Serialize + Send,
-{
-  fn print_json(&self) {
-    serde_json::to_writer_pretty(io::stdout(), self).ok();
-    println!();
-  }
-}
+impl<T> Output for T where T: Serialize + Send {}
 
 pub(crate) type SubcommandResult = Result<Box<dyn Output>>;

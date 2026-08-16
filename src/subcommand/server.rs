@@ -51,7 +51,6 @@ use {
     set_header::SetResponseHeaderLayer,
   },
 };
-use crate::drc20::operation::{deserialize_drc20_operation, Action};
 use crate::drc20::token_info::{ExtendedTokenInfo, HolderBalanceForTick, HoldersInfoForTick};
 use crate::templates::{DRC20Balance, DRC20Output, DRC20UtxoOutput};
 
@@ -140,6 +139,7 @@ struct Drc20TickInfoQuery {
 
 #[derive(Deserialize)]
 struct Drc20BalanceQuery {
+  #[expect(dead_code, reason = "accepted for backwards-compatible request decoding")]
   show_all: Option<bool>,
   show_utxos: Option<bool>,
   tick: Option<String>,
@@ -162,6 +162,7 @@ struct InscriptionInventoryQuery {
   limit: Option<usize>,
 }
 
+#[expect(dead_code, reason = "retained for legacy block route decoding")]
 enum BlockQuery {
   Height(u32),
   Hash(BlockHash),
@@ -186,6 +187,7 @@ enum SpawnConfig {
 }
 
 #[derive(Deserialize)]
+#[expect(dead_code, reason = "retained for backwards-compatible request decoding")]
 struct InscriptionsByOutputsQuery {
   outputs: String,
 }
@@ -218,6 +220,7 @@ struct Search {
 #[folder = "static"]
 struct StaticAssets;
 
+#[expect(dead_code, reason = "retained for legacy embedded static pages")]
 struct StaticHtml {
   title: &'static str,
   html: &'static str,
@@ -730,6 +733,7 @@ impl Server {
     )
   }
 
+  #[expect(dead_code, reason = "retained for the legacy paginated DRC-20 route")]
   async fn drc20_by_address(
     Extension(index): Extension<Arc<Index>>,
     Path(params): Path<(String, u32)>,
@@ -753,7 +757,7 @@ impl Server {
     query: Drc20BalanceQuery,
   ) -> ServerResult<Response> {
     task::block_in_place(|| {
-      let (address, page) = (address.clone(), page.unwrap_or(0));
+      let (address, _page) = (address.clone(), page.unwrap_or(0));
       let address_from_str =
         Address::from_str(&address).map_err(|err| ServerError::BadRequest(err.to_string()))?;
       let value_filter = query.value_filter.unwrap_or(0);
@@ -924,8 +928,8 @@ impl Server {
           let token_info = index.get_drc20_token_info(&entry.tick.clone())?;
           let token_info_clone = token_info.clone().unwrap();
           let decimals = token_info_clone.decimal;
-          let overall_balance = entry.overall_balance;
-          let transferable_balance = entry.transferable_balance;
+          let _overall_balance = entry.overall_balance;
+          let _transferable_balance = entry.transferable_balance;
           if let Some(drc20_balance) = DRC20Balance::from_strings(
             tick.as_str(),
             format_balance(entry.transferable_balance, decimals).as_str(),
@@ -3061,6 +3065,7 @@ impl Server {
 }
 
 // Helper function to process inscriptions and create InscriptionJson
+#[expect(dead_code, reason = "retained for the legacy transaction response shape")]
 async fn process_inscriptions(
   index: &Index,
   inscription_ids: &[InscriptionId],
