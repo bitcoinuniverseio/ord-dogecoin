@@ -48,7 +48,7 @@ use {
   clap::{ArgGroup, Parser},
   derive_more::{Display, FromStr},
   drc20::{errors},
-  html_escaper::{Escape, Trusted},
+  boilerplate::Trusted,
   lazy_static::lazy_static,
   regex::Regex,
   serde::{Deserialize, Deserializer, Serialize, Serializer},
@@ -103,6 +103,7 @@ macro_rules! tprintln {
 }
 
 mod arguments;
+pub mod authority_api;
 mod blocktime;
 mod chain;
 mod config;
