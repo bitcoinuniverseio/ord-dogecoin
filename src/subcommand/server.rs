@@ -2788,6 +2788,8 @@ impl Server {
         .then_with(|| left.txid.cmp(&right.txid))
         .then_with(|| left.vout.cmp(&right.vout))
     });
+    let total_count = candidates.len();
+    let truncated = total_count > limit;
     candidates.truncate(limit);
 
     Ok(
@@ -2797,6 +2799,8 @@ impl Server {
         block_hash: block_hash.to_string(),
         address: canonical_address,
         inventory_complete: true,
+        total_count,
+        truncated,
         inputs: candidates,
       })
       .into_response(),
