@@ -47,7 +47,11 @@ impl Display for MintError {
 
 #[cfg(test)]
 mod tests {
-  use {super::*, crate::index::testing::Context};
+  use {
+    super::*,
+    bitcoin::blockdata::constants::COIN_VALUE,
+    crate::index::testing::Context,
+  };
 
   const DUNE: u128 = 99246114928149462;
 
@@ -75,7 +79,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -122,7 +126,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -171,7 +175,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -222,7 +226,7 @@ mod tests {
               output: 0,
             }],
             etching: Some(Etching {
-              dune: Dune(DUNE - 1),
+              dune: Some(Dune(DUNE - 1)),
               ..Default::default()
             }),
             ..Default::default()
@@ -254,7 +258,7 @@ mod tests {
               output: 0,
             }],
             etching: Some(Etching {
-              dune: Dune(DUNE),
+              dune: Some(Dune(DUNE)),
               ..Default::default()
             }),
             ..Default::default()
@@ -306,7 +310,7 @@ mod tests {
           }],
           etching: Some(Etching {
             divisibility: 1,
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -364,7 +368,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -421,7 +425,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -472,7 +476,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -529,7 +533,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -587,7 +591,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -637,7 +641,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -731,7 +735,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           burn: true,
@@ -780,7 +784,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -865,7 +869,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -950,7 +954,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1034,7 +1038,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1075,7 +1079,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1120,7 +1124,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1167,7 +1171,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE + 1),
+            dune: Some(Dune(DUNE + 1)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1285,7 +1289,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1332,7 +1336,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE + 1),
+            dune: Some(Dune(DUNE + 1)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1521,7 +1525,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1568,7 +1572,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE + 1),
+            dune: Some(Dune(DUNE + 1)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1705,7 +1709,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1788,7 +1792,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1813,7 +1817,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE + 1),
+            dune: Some(Dune(DUNE + 1)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1891,7 +1895,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -1992,7 +1996,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2039,7 +2043,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE + 1),
+            dune: Some(Dune(DUNE + 1)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2184,7 +2188,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2278,7 +2282,7 @@ mod tests {
             output: 1,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2330,7 +2334,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2388,7 +2392,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2439,7 +2443,7 @@ mod tests {
             output: 5,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2514,7 +2518,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2589,7 +2593,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2657,7 +2661,7 @@ mod tests {
             output: 5,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2720,7 +2724,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2785,7 +2789,7 @@ mod tests {
             },
           ],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2843,7 +2847,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -2947,7 +2951,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3058,7 +3062,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3169,7 +3173,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3273,7 +3277,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3384,7 +3388,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3509,7 +3513,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             symbol: Some('$'),
             ..Default::default()
           }),
@@ -3561,7 +3565,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3611,7 +3615,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             ..Default::default()
           }),
           ..Default::default()
@@ -3708,7 +3712,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             ..Default::default()
           }),
@@ -3841,7 +3845,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             term: Some(2),
             ..Default::default()
@@ -3974,7 +3978,7 @@ mod tests {
             output: 0,
           }],
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             term: Some(0),
             ..Default::default()
@@ -4056,7 +4060,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             ..Default::default()
           }),
@@ -4151,7 +4155,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             ..Default::default()
           }),
@@ -4203,7 +4207,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(MAX_LIMIT + 1),
             ..Default::default()
           }),
@@ -4279,7 +4283,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             term: Some(1),
             ..Default::default()
           }),
@@ -4326,7 +4330,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             ..Default::default()
           }),
@@ -4437,7 +4441,7 @@ mod tests {
       op_return: Some(
         Dunestone {
           etching: Some(Etching {
-            dune: Dune(DUNE),
+            dune: Some(Dune(DUNE)),
             limit: Some(1000),
             ..Default::default()
           }),

@@ -79,10 +79,11 @@ path = "src/bin/main.rs"
 [lib]
 name = "ord"
 path = "src/lib.rs"
+test = false
 
 [[test]]
-name = "integration"
-path = "tests/lib.rs"
+name = "compatibility"
+path = "tests/compatibility.rs"
 
 [[test]]
 name = "authority-api-contract"
