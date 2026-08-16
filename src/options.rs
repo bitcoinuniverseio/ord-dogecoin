@@ -118,6 +118,10 @@ impl Options {
     self.index_dunes
   }
 
+  pub(crate) fn index_drc20(&self) -> bool {
+    self.index_drc20
+  }
+
   pub(crate) fn rpc_url(&self) -> String {
     self.rpc_url.clone().unwrap_or_else(|| {
       format!(
@@ -672,5 +676,22 @@ mod tests {
       .unwrap()
       .options
       .index_dunes(),);
+  }
+
+  #[test]
+  fn index_drc20_returns_true_only_when_its_flag_is_passed() {
+    assert!(Arguments::try_parse_from([
+      "ord",
+      "--index-drc20",
+      "index",
+      "update"
+    ])
+    .unwrap()
+    .options
+    .index_drc20());
+    assert!(!Arguments::try_parse_from(["ord", "index", "update"])
+      .unwrap()
+      .options
+      .index_drc20());
   }
 }
