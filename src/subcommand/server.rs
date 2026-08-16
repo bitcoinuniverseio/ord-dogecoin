@@ -2319,7 +2319,7 @@ impl Server {
     Some((headers, inscription.into_body()?))
   }
 
-  pub(super) fn preview_content_security_policy(
+  fn preview_content_security_policy(
     media: Media,
     csp: &Option<String>,
   ) -> ServerResult<[(HeaderName, HeaderValue); 1]> {

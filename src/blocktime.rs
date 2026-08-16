@@ -17,12 +17,6 @@ impl Blocktime {
     }
   }
 
-  pub(crate) fn unix_timestamp(self) -> i64 {
-    match self {
-      Self::Confirmed(timestamp) | Self::Expected(timestamp) => timestamp.timestamp(),
-    }
-  }
-
   pub(crate) fn suffix(self) -> &'static str {
     match self {
       Self::Confirmed(_) => "",
