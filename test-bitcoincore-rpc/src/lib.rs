@@ -3,7 +3,7 @@
 use {
   api::Api,
   bitcoin::{
-    blockdata::script,
+    blockdata::{constants::COIN_VALUE, script},
     consensus::encode::{deserialize, serialize},
     hash_types::BlockHash,
     hashes::Hash,

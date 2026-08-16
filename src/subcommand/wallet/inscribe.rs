@@ -104,12 +104,8 @@ impl Inscribe {
     let fees =
       Self::calculate_fee(&unsigned_commit_tx, &utxos) + Self::calculate_fee(&reveal_tx, &utxos);
 
-    let mut reveal = Txid::all_zeros();
-    let mut commit = Txid::all_zeros();
-
-    if self.dry_run {
-      reveal = reveal_tx.txid();
-      commit = unsigned_commit_tx.txid();
+    let (commit, reveal) = if self.dry_run {
+      (unsigned_commit_tx.txid(), reveal_tx.txid())
     } else {
       if !self.no_backup {
         Inscribe::backup_recovery_key(&client, recovery_key_pair, options.chain().network())?;
@@ -119,13 +115,14 @@ impl Inscribe {
         .sign_raw_transaction_with_wallet(&unsigned_commit_tx, None, None)?
         .hex;
 
-      commit = client
+      let commit = client
         .send_raw_transaction(&signed_raw_commit_tx)
         .context("Failed to send commit transaction")?;
 
-      reveal = client
+      let reveal = client
         .send_raw_transaction(&reveal_tx)
         .context("Failed to send reveal transaction")?;
+      (commit, reveal)
     };
 
     Ok(Box::new(Output {
