@@ -1,5 +1,3 @@
-#![recursion_limit = "256"]
-
 use {
   super::*,
   bitcoin::secp256k1::{

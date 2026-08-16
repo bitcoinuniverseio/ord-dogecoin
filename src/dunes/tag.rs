@@ -7,7 +7,8 @@ pub(super) enum Tag {
   Dune = 4,
   Limit = 6,
   OffsetEnd = 8,
-  Deadline = 10, // will be ignored
+  #[expect(dead_code, reason = "recognized and deliberately ignored by consensus decoding")]
+  Deadline = 10,
   Pointer = 12,
   HeightStart = 14,
   OffsetStart = 16,

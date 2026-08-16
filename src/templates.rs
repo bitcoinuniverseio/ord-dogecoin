@@ -88,6 +88,7 @@ pub(crate) trait PageContent: Display + 'static {
     PageHtml::new(self, page_config)
   }
 
+  #[expect(dead_code, reason = "template extension point retained for legacy previews")]
   fn preview_image_url(&self) -> Option<Trusted<String>> {
     None
   }
