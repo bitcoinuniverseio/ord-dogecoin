@@ -37,7 +37,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [chain, block_count, block_hash, address, inventory_complete, inputs]
+                required: [chain, block_count, block_hash, address, inventory_complete, total_count, truncated, inputs]
                 properties:
                   chain:
                     type: string
@@ -51,6 +51,14 @@ paths:
                   inventory_complete:
                     type: boolean
                     enum: [true]
+                    description: The authoritative index is complete at block_count; this does not mean the bounded input page is untruncated.
+                  total_count:
+                    type: integer
+                    minimum: 0
+                    description: Complete number of confirmed cardinal UTXOs before applying limit.
+                  truncated:
+                    type: boolean
+                    description: True when total_count is greater than the number of returned inputs.
                   inputs:
                     type: array
                     items:

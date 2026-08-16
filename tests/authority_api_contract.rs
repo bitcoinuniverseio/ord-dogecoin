@@ -31,6 +31,8 @@ fn serializes_exact_cardinal_funding_proofs() {
     block_hash: "ab".repeat(32),
     address: "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq".to_string(),
     inventory_complete: true,
+    total_count: 1,
+    truncated: false,
     inputs: vec![FundingInventoryItem {
       txid: "cd".repeat(32),
       vout: u32::MAX,
@@ -43,6 +45,8 @@ fn serializes_exact_cardinal_funding_proofs() {
 
   let encoded = serde_json::to_value(inventory).unwrap();
   assert_eq!(encoded["inventory_complete"], true);
+  assert_eq!(encoded["total_count"], 1);
+  assert_eq!(encoded["truncated"], false);
   assert_eq!(
     encoded["inputs"][0]["value_sats"],
     json!(u64::MAX.to_string())

@@ -26,7 +26,7 @@ You can import the `openapi.yaml` file and view the API documentation via Import
 
 ### Universe authority inventory
 
-`GET /api/v1/funding/{address}?limit=20` returns confirmed cardinal UTXOs for a canonical Dogecoin address. Each item includes the exact atomic value, script, confirmations, and raw previous transaction so downstream services can independently verify the prevout. Outputs carrying inscriptions or Dunes are excluded. The endpoint requires `--index-transactions`; callers must apply any additional protocol reservations owned by downstream indexers before treating an output as spendable. `limit` is bounded to 1–50.
+`GET /api/v1/funding/{address}?limit=20` returns confirmed cardinal UTXOs for a canonical Dogecoin address. Each item includes the exact atomic value, script, confirmations, and raw previous transaction so downstream services can independently verify the prevout. Outputs carrying inscriptions or Dunes are excluded. The endpoint requires `--index-transactions`; callers must apply any additional protocol reservations owned by downstream indexers before treating an output as spendable. `limit` is bounded to 1–50. `total_count` reports the complete cardinal UTXO count before the response bound and `truncated` states whether additional entries exist; `inventory_complete` describes index completeness and must not be interpreted as an unbounded page.
 
 ## Continuous verification
 

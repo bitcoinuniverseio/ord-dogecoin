@@ -96,5 +96,7 @@ pub struct FundingInventory {
   pub block_hash: String,
   pub address: String,
   pub inventory_complete: bool,
+  pub total_count: usize,
+  pub truncated: bool,
   pub inputs: Vec<FundingInventoryItem>,
 }
