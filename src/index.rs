@@ -41,6 +41,9 @@ mod fetcher;
 mod rtx;
 mod updater;
 
+#[cfg(test)]
+pub(crate) mod testing;
+
 const SCHEMA_VERSION: u64 = 6;
 
 macro_rules! define_table {
@@ -327,7 +330,7 @@ impl Index {
             outpoint_to_sat_ranges.insert(&OutPoint::null().store(), [].as_slice())?;
           }
 
-          index_drc20 = options.index_dunes();
+          index_drc20 = options.index_drc20();
           index_dunes = options.index_dunes();
           index_sats = options.index_sats;
           index_transactions = options.index_transactions;
@@ -1003,6 +1006,22 @@ impl Index {
     );
 
     result
+  }
+
+  pub(crate) fn get_drc20_transferables(&self) -> Result<Vec<TransferableLog>> {
+    let rtx = self.database.begin_read()?;
+    let drc20_transferable_log = rtx.open_table(DRC20_TRANSFERABLELOG)?;
+
+    Ok(
+      drc20_transferable_log
+        .iter()?
+        .flat_map(|result| {
+          result.map(|(_, value)| {
+            rmp_serde::from_slice::<TransferableLog>(value.value()).unwrap()
+          })
+        })
+        .collect(),
+    )
   }
 
   pub(crate) fn get_drc20_transferable_by_tick(

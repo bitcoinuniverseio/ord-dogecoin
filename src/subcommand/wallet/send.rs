@@ -50,7 +50,6 @@ impl Send {
           inscriptions,
           dune,
           dunic_outputs,
-          unspent_outputs,
         )?;
         return Ok(Box::new(Output { transaction }));
       }
@@ -125,7 +124,6 @@ impl Send {
     inscriptions: BTreeMap<SatPoint, InscriptionId>,
     spaced_dune: SpacedDune,
     dunic_outputs: BTreeSet<OutPoint>,
-    unspent_outputs: BTreeMap<OutPoint, Amount>,
   ) -> Result<Txid> {
     ensure!(
       index.has_dune_index(),

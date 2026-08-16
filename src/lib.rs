@@ -28,7 +28,6 @@ use {
     outgoing::Outgoing,
     representation::Representation,
     dunes::{Etching, Pile, SpacedDune},
-    sat::Sat,
     subcommand::Subcommand,
     tally::Tally,
   },
@@ -49,7 +48,7 @@ use {
   clap::{ArgGroup, Parser},
   derive_more::{Display, FromStr},
   drc20::{errors},
-  html_escaper::{Escape, Trusted},
+  boilerplate::Trusted,
   lazy_static::lazy_static,
   regex::Regex,
   serde::{Deserialize, Deserializer, Serialize, Serializer},
@@ -81,6 +80,7 @@ use crate::sat_point::SatPoint;
 
 pub use self::{
   fee_rate::FeeRate, object::Object, rarity::Rarity,
+  sat::Sat,
   dunes::{Edict, Dune, DuneId, Dunestone, Terms},
   subcommand::wallet::transaction_builder::{Target, TransactionBuilder},
 };
@@ -103,6 +103,7 @@ macro_rules! tprintln {
 }
 
 mod arguments;
+pub mod authority_api;
 mod blocktime;
 mod chain;
 mod config;

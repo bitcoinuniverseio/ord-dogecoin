@@ -1,5 +1,4 @@
 use super::*;
-use serde_json;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
@@ -90,7 +89,7 @@ impl From<Sat> for Epoch {
     let len = starting_sats.len();
     for i in 0..len-1 {
       if sat < starting_sats[i+1] {
-        return Epoch(i as u32);
+        return Epoch(u32::try_from(i).expect("epoch index exceeds u32"));
       }
     }
 
@@ -176,5 +175,3 @@ mod tests {
     assert_eq!(Epoch(100), 100);
   }
 }
-
-

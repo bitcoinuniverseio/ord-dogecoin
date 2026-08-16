@@ -392,7 +392,7 @@ impl InscriptionParser {
     let mut m: u64 = 0;
 
     for i in 0..data.len() {
-      n += (data[i] as u64) << m;
+      n += u64::from(data[i]) << m;
       m += 8;
     }
 
