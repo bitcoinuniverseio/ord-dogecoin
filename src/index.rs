@@ -327,7 +327,7 @@ impl Index {
             outpoint_to_sat_ranges.insert(&OutPoint::null().store(), [].as_slice())?;
           }
 
-          index_drc20 = options.index_dunes();
+          index_drc20 = options.index_drc20();
           index_dunes = options.index_dunes();
           index_sats = options.index_sats;
           index_transactions = options.index_transactions;
