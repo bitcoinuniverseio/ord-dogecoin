@@ -81,10 +81,11 @@ path = "src/bin/main.rs"
 [lib]
 name = "ord"
 path = "src/lib.rs"
+test = false
 
 [[test]]
-name = "integration"
-path = "tests/lib.rs"
+name = "compatibility"
+path = "tests/compatibility.rs"
 
 [build-dependencies]
 pulldown-cmark = "0.9.2"

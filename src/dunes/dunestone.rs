@@ -168,7 +168,7 @@ impl Dunestone {
     }))
   }
 
-  pub(crate) fn encipher(&self) -> Script {
+  pub fn encipher(&self) -> Script {
     let mut payload = Vec::new();
 
     if let Some(etching) = self.etching {
@@ -296,8 +296,13 @@ mod tests {
   use bitcoin::PackedLockTime;
   use {
     super::*,
-    bitcoin::{locktime, Script, TxOut},
+    bitcoin::{Script, TxOut},
   };
+
+  // rust-dogecoin is intentionally pinned to the Bitcoin 0.29 script API.
+  // Keep the protocol vectors expressed in the corresponding byte-slice types.
+  type PushBytes = [u8];
+  type ScriptBuf = Script;
 
   #[test]
   fn from_transaction_returns_none_if_decipher_returns_error() {
@@ -465,7 +470,7 @@ mod tests {
             .into_script(),
           value: 0,
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       })
       .unwrap()
@@ -564,7 +569,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -595,7 +600,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -605,7 +610,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -630,7 +635,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -640,7 +645,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -665,7 +670,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -696,12 +701,12 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -726,7 +731,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -736,7 +741,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -761,7 +766,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -771,8 +776,8 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
-          divisibility: 5,
+          dune: Some(Dune(4)),
+          divisibility: Some(5),
           ..Default::default()
         }),
         ..Default::default()
@@ -797,7 +802,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -807,7 +812,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -832,7 +837,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -842,7 +847,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -867,7 +872,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -877,7 +882,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           symbol: Some('a'),
           ..Default::default()
         }),
@@ -903,7 +908,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -913,8 +918,8 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
-          divisibility: 1,
+          dune: Some(Dune(4)),
+          divisibility: Some(1),
           symbol: Some('a'),
           ..Default::default()
         }),
@@ -940,7 +945,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -950,7 +955,7 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
@@ -975,7 +980,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -1013,7 +1018,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -1054,7 +1059,7 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -1064,8 +1069,8 @@ mod tests {
           output: 3,
         }],
         etching: Some(Etching {
-          dune: Dune(4),
-          divisibility: 5,
+          dune: Some(Dune(4)),
+          divisibility: Some(5),
           ..Default::default()
         }),
         ..Default::default()
@@ -1096,7 +1101,7 @@ mod tests {
             value: 0
           }
         ],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -1136,7 +1141,7 @@ mod tests {
             value: 0
           }
         ],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
@@ -1173,7 +1178,7 @@ mod tests {
     case(
       Vec::new(),
       Some(Etching {
-        dune: Dune(0),
+        dune: Some(Dune(0)),
         ..Default::default()
       }),
       4,
@@ -1183,7 +1188,7 @@ mod tests {
       Vec::new(),
       Some(Etching {
         divisibility: MAX_DIVISIBILITY,
-        dune: Dune(0),
+        dune: Some(Dune(0)),
         ..Default::default()
       }),
       6,
@@ -1193,7 +1198,7 @@ mod tests {
       Vec::new(),
       Some(Etching {
         divisibility: MAX_DIVISIBILITY,
-        dune: Dune(0),
+        dune: Some(Dune(0)),
         symbol: Some('$'),
         ..Default::default()
       }),
@@ -1203,7 +1208,7 @@ mod tests {
     case(
       Vec::new(),
       Some(Etching {
-        dune: Dune(u128::max_value()),
+        dune: Some(Dune(u128::max_value())),
         ..Default::default()
       }),
       22,
@@ -1221,7 +1226,7 @@ mod tests {
       }],
       Some(Etching {
         divisibility: MAX_DIVISIBILITY,
-        dune: Dune(u128::max_value()),
+        dune: Some(Dune(u128::max_value())),
         ..Default::default()
       }),
       28,
@@ -1239,7 +1244,7 @@ mod tests {
       }],
       Some(Etching {
         divisibility: MAX_DIVISIBILITY,
-        dune: Dune(u128::max_value()),
+        dune: Some(Dune(u128::max_value())),
         ..Default::default()
       }),
       46,
@@ -1428,12 +1433,12 @@ mod tests {
               .into_script(),
           value: 0
         }],
-        lock_time: locktime::absolute::LockTime::ZERO,
+        lock_time: PackedLockTime::ZERO,
         version: 0,
       }),
       Ok(Some(Dunestone {
         etching: Some(Etching {
-          dune: Dune(4),
+          dune: Some(Dune(4)),
           ..Default::default()
         }),
         ..Default::default()
