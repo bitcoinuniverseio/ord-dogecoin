@@ -676,7 +676,7 @@ impl Server {
       }
 
       if !index.get_inscriptions_on_output(outpoint)?.is_empty() {
-        inscription_shibes += output.value as u128;
+        inscription_shibes += u128::from(output.value);
         if !show_unsafe {
           continue;
         }
@@ -684,7 +684,7 @@ impl Server {
 
       element_counter += 1;
 
-      total_shibes += output.value as u128;
+      total_shibes += u128::from(output.value);
 
       let confirmations = if let Some(block_hash_info) = index.get_transaction_blockhash(txid)? {
         block_hash_info.confirmations
@@ -1748,7 +1748,10 @@ impl Server {
         let outputs = tx.output.iter()
             .enumerate()  // Enumerate the iterator to get the index of each output
             .map(|(vout, _output)| {
-              let outpoint = OutPoint::new(txid, vout as u32);  // Create the OutPoint from txid and vout
+              let outpoint = OutPoint::new(
+                txid,
+                u32::try_from(vout).expect("transaction output indexes fit in u32"),
+              );
               outpoint.to_string()  // Convert the OutPoint to a string
             })
             .collect::<Vec<_>>()
@@ -1903,7 +1906,10 @@ impl Server {
           let outputs = tx.output.iter()
             .enumerate()  // Enumerate the iterator to get the index of each output
             .map(|(vout, _output)| {
-              let outpoint = OutPoint::new(txid, vout as u32);  // Create the OutPoint from txid and vout
+              let outpoint = OutPoint::new(
+                txid,
+                u32::try_from(vout).expect("transaction output indexes fit in u32"),
+              );
               outpoint.to_string()  // Convert the OutPoint to a string
             })
             .collect::<Vec<_>>()
@@ -2809,7 +2815,7 @@ async fn process_inscriptions(
 }
 
 fn format_balance(balance: u128, decimal_places: u8) -> String {
-  let factor = 10u128.pow(decimal_places as u32);
+  let factor = 10u128.pow(u32::from(decimal_places));
   let integer_part = balance / factor; // Get the integer part
   let fractional_part = balance % factor; // Get the fractional part
 

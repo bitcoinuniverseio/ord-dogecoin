@@ -41,6 +41,9 @@ mod fetcher;
 mod rtx;
 mod updater;
 
+#[cfg(test)]
+pub(crate) mod testing;
+
 const SCHEMA_VERSION: u64 = 6;
 
 macro_rules! define_table {

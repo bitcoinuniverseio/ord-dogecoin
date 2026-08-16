@@ -28,7 +28,6 @@ use {
     outgoing::Outgoing,
     representation::Representation,
     dunes::{Etching, Pile, SpacedDune},
-    sat::Sat,
     subcommand::Subcommand,
     tally::Tally,
   },
@@ -81,6 +80,7 @@ use crate::sat_point::SatPoint;
 
 pub use self::{
   fee_rate::FeeRate, object::Object, rarity::Rarity,
+  sat::Sat,
   dunes::{Edict, Dune, DuneId, Dunestone, Terms},
   subcommand::wallet::transaction_builder::{Target, TransactionBuilder},
 };

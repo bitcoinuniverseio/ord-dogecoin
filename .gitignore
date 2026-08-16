@@ -8,6 +8,7 @@
 /index.redb
 /ord.log
 /target
+/.runtime/
 /test-times.txt
 /tmp
 .env

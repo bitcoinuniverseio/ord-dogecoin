@@ -1,5 +1,8 @@
 pub(crate) use {
-  super::*, bitcoin::Witness, pretty_assertions::assert_eq as pretty_assert_eq, std::iter,
+  super::*,
+  bitcoin::{blockdata::constants::COIN_VALUE, Witness},
+  pretty_assertions::assert_eq as pretty_assert_eq,
+  std::iter,
   test_bitcoincore_rpc::TransactionTemplate, unindent::Unindent,
 };
 use crate::sat_point::SatPoint;
