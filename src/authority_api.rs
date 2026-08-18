@@ -1,5 +1,7 @@
 use serde::Serialize;
 
+use crate::Inscription;
+
 pub const INVENTORY_LIMIT_DEFAULT: usize = 250;
 pub const INVENTORY_LIMIT_MAXIMUM: usize = 1_000;
 pub const FUNDING_LIMIT_DEFAULT: usize = 20;
@@ -19,6 +21,17 @@ pub fn checked_funding_limit(limit: Option<usize>) -> Result<usize, &'static str
     return Err("funding limit must be between 1 and 50");
   }
   Ok(limit)
+}
+
+pub(crate) fn resolved_content_metadata(
+  inscription: &Inscription,
+  delegate: Option<&Inscription>,
+) -> (Option<String>, Option<usize>) {
+  let content = delegate.unwrap_or(inscription);
+  (
+    content.content_type().map(str::to_owned),
+    content.content_length(),
+  )
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -99,4 +112,27 @@ pub struct FundingInventory {
   pub total_count: usize,
   pub truncated: bool,
   pub inputs: Vec<FundingInventoryItem>,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn delegated_inventory_metadata_describes_the_bytes_served_by_content() {
+    let inscription = Inscription::new(
+      Some(b"text/plain".to_vec()),
+      Some(b"delegate-reference".to_vec()),
+    );
+    let delegate = Inscription::new(Some(b"image/png".to_vec()), Some(vec![0; 42]));
+
+    assert_eq!(
+      resolved_content_metadata(&inscription, Some(&delegate)),
+      (Some("image/png".to_string()), Some(42)),
+    );
+    assert_eq!(
+      resolved_content_metadata(&inscription, None),
+      (Some("text/plain".to_string()), Some(18)),
+    );
+  }
 }
