@@ -65,3 +65,16 @@ fn non_dune_op_return_is_not_interpreted_as_a_dunestone() {
 
   assert_eq!(Dunestone::from_transaction(&transaction(script)), None);
 }
+
+#[test]
+fn configured_redb_cache_applies_before_existing_index_open() {
+  let source = include_str!("../src/index.rs");
+  let configure = source
+    .find("database_builder.set_cache_size(db_cache_size)")
+    .expect("redb cache must be configured");
+  let open = source
+    .find("database_builder.open(&path)")
+    .expect("existing redb index must use the configured builder");
+
+  assert!(configure < open);
+}
