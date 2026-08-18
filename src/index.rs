@@ -188,6 +188,17 @@ impl<T> BitcoinCoreRpcResultExt<T> for Result<T, bitcoincore_rpc::Error> {
   }
 }
 
+fn database_cache_size(options: &Options) -> Result<usize> {
+  match options.db_cache_size {
+    Some(db_cache_size) => Ok(db_cache_size),
+    None => {
+      let mut system = System::new();
+      system.refresh_memory();
+      Ok(usize::try_from(system.total_memory() / 4)?)
+    }
+  }
+}
+
 impl Index {
   pub(crate) fn open(options: &Options) -> Result<Self> {
     let rpc_url = options.rpc_url();
@@ -232,7 +243,12 @@ impl Index {
     let index_sats;
     let index_transactions;
 
-    let database = match Database::builder().open(&path) {
+    let db_cache_size = database_cache_size(options)?;
+    let mut database_builder = Database::builder();
+    database_builder.set_cache_size(db_cache_size);
+    log::info!("Using {db_cache_size} bytes of database cache");
+
+    let database = match database_builder.open(&path) {
       Ok(database) => {
         {
           let tx = database.begin_read()?;
@@ -285,18 +301,7 @@ impl Index {
       Err(DatabaseError::Storage(StorageError::Io(error)))
         if error.kind() == io::ErrorKind::NotFound =>
       {
-        let db_cache_size = match options.db_cache_size {
-          Some(db_cache_size) => db_cache_size,
-          None => {
-            let mut sys = System::new();
-            sys.refresh_memory();
-            usize::try_from(sys.total_memory() / 4)?
-          }
-        };
-
-        let database = Database::builder()
-          .set_cache_size(db_cache_size)
-          .create(&path)?;
+        let database = database_builder.create(&path)?;
 
         let tx = database.begin_write()?;
 
@@ -1705,6 +1710,16 @@ mod tests {
     crate::index::testing::Context,
     super::*,
   };
+
+  #[test]
+  fn explicit_database_cache_size_is_preserved() {
+    let options = Options {
+      db_cache_size: Some(8 * 1024 * 1024),
+      ..Default::default()
+    };
+
+    assert_eq!(database_cache_size(&options).unwrap(), 8 * 1024 * 1024);
+  }
 
   #[test]
   fn height_limit() {
