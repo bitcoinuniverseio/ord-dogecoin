@@ -12,7 +12,7 @@ use {
     authority_api::{
       checked_funding_limit, checked_inventory_limit, Drc20TransferableInventory,
       Drc20TransferableInventoryItem, FundingInventory, FundingInventoryItem, InscriptionInventory,
-      InscriptionInventoryItem, InventoryLocation,
+      InscriptionInventoryItem, InventoryLocation, resolved_content_metadata,
     },
     drc20::{script_key::ScriptKey, Tick},
     page_config::PageConfig,
@@ -2569,8 +2569,18 @@ impl Server {
       let satpoint = index
         .get_inscription_satpoint_by_id(inscription_id)?
         .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
-      let content_type = inscription.content_type().map(str::to_owned);
-      let content_length = inscription.content_length();
+      // `/content/:id` resolves delegates before serving bytes, so the
+      // inventory must advertise the resolved type and length as well.
+      let delegate = match inscription.delegate() {
+        Some(delegate_id) => Some(
+          index
+            .get_inscription_by_id(delegate_id)?
+            .ok_or_not_found(|| format!("delegate {inscription_id}"))?,
+        ),
+        None => None,
+      };
+      let (content_type, content_length) =
+        resolved_content_metadata(&inscription, delegate.as_ref());
       let location = if satpoint.outpoint == OutPoint::null() {
         None
       } else {
