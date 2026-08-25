@@ -10,9 +10,11 @@ use {
   super::*,
   crate::{
     authority_api::{
-      checked_funding_limit, checked_inventory_limit, Drc20TransferableInventory,
-      Drc20TransferableInventoryItem, FundingInventory, FundingInventoryItem, InscriptionInventory,
-      InscriptionInventoryItem, InventoryLocation, resolved_content_metadata,
+      checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
+      Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenInventory, Drc20TokenInventoryItem,
+      Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
+      FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
+      resolved_content_metadata,
     },
     drc20::{script_key::ScriptKey, Tick},
     page_config::PageConfig,
@@ -159,6 +161,12 @@ struct JsonQuery {
 #[derive(Deserialize)]
 struct InscriptionInventoryQuery {
   cursor: Option<u64>,
+  limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct Drc20InventoryQuery {
+  cursor: Option<String>,
   limit: Option<usize>,
 }
 
@@ -319,6 +327,11 @@ impl Server {
         .route(
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
+        )
+        .route("/api/v1/drc20/tokens", get(Self::drc20_token_inventory))
+        .route(
+          "/api/v1/drc20/tokens/:tick/holders",
+          get(Self::drc20_holder_inventory),
         )
         .route("/api/v1/funding/:address", get(Self::funding_inventory))
         .route("/inscriptions", get(Self::inscriptions))
@@ -2727,6 +2740,142 @@ impl Server {
         block_hash: block_hash.to_string(),
         inventory_complete: true,
         transferables,
+      })
+      .into_response(),
+    )
+  }
+
+  /// Paged DRC-20 token catalog with indexed protocol state.
+  ///
+  /// `/api/v1/drc20/transferables` reports spendable marketplace inventory,
+  /// which is a different question from "which DRC-20 tokens exist". A token
+  /// with no outstanding transferable is still a deployed token, so an index
+  /// built from transferables silently drops it. This serves the catalog and
+  /// its protocol state from the indexed DRC-20 tables, stamped with the same
+  /// checkpoint evidence as every other authority projection.
+  async fn drc20_token_inventory(
+    Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20InventoryQuery>,
+  ) -> ServerResult<Response> {
+    let limit = checked_inventory_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let offset = checked_offset_cursor(query.cursor.as_deref())
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+
+    let mut catalog = index
+      .get_drc20_tokens_info()
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    // A deterministic order is what makes an offset cursor safe: without it a
+    // page boundary could repeat or skip a ticker.
+    catalog.sort_by(|left, right| left.tick.to_string().cmp(&right.tick.to_string()));
+    let total_count = catalog.len();
+
+    let mut tokens = Vec::new();
+    for info in catalog.iter().skip(offset).take(limit) {
+      let holder_count = index
+        .get_drc20_token_holder(&info.tick.clone())
+        .map(|holders| holders.len())
+        .unwrap_or(0);
+      let remaining = info.supply.saturating_sub(info.minted);
+      tokens.push(Drc20TokenInventoryItem {
+        ticker: info.tick.to_string(),
+        deploy_inscription_id: info.inscription_id.to_string(),
+        deploy_inscription_number: info.inscription_number.to_string(),
+        decimals: info.decimal,
+        max_atomic: info.supply.to_string(),
+        limit_atomic: info.limit_per_mint.to_string(),
+        minted_atomic: info.minted.to_string(),
+        remaining_atomic: remaining.to_string(),
+        holder_count,
+        deployed_height: u32::try_from(info.deployed_number)
+          .map_err(|error| ServerError::BadRequest(error.to_string()))?,
+        deployed_timestamp: info.deployed_timestamp,
+        deployed_by: info.deploy_by.to_string(),
+        latest_mint_number: info.latest_mint_number.to_string(),
+        complete: info.minted >= info.supply,
+      });
+    }
+
+    let next = offset.saturating_add(tokens.len());
+    Ok(
+      Json(Drc20TokenInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        inventory_complete: true,
+        total_count,
+        next_cursor: if next < total_count {
+          Some(next.to_string())
+        } else {
+          None
+        },
+        tokens,
+      })
+      .into_response(),
+    )
+  }
+
+  /// Paged holder balances for one DRC-20 ticker, in atomic units.
+  async fn drc20_holder_inventory(
+    Extension(index): Extension<Arc<Index>>,
+    Path(tick): Path<String>,
+    Query(query): Query<Drc20InventoryQuery>,
+  ) -> ServerResult<Response> {
+    let limit = checked_inventory_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let offset = checked_offset_cursor(query.cursor.as_deref())
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let tick =
+      Tick::from_str(tick.as_str()).map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    index
+      .get_drc20_token_info(&tick.clone())?
+      .ok_or_not_found(|| format!("DRC-20 token {tick}"))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+
+    let mut script_keys = index.get_drc20_token_holder(&tick.clone())?;
+    script_keys.sort_by_key(|key| key.to_string());
+    let total_count = script_keys.len();
+
+    let mut holders = Vec::new();
+    for script_key in script_keys.iter().skip(offset).take(limit) {
+      let Some(balance) = index
+        .get_drc20_balance(script_key, &tick)
+        .map_err(|error| ServerError::BadRequest(error.to_string()))?
+      else {
+        continue;
+      };
+      let transferable = balance.transferable_balance;
+      let overall = balance.overall_balance;
+      holders.push(Drc20HolderInventoryItem {
+        address: script_key.to_string(),
+        overall_atomic: overall.to_string(),
+        transferable_atomic: transferable.to_string(),
+        available_atomic: overall.saturating_sub(transferable).to_string(),
+      });
+    }
+
+    let next = offset.saturating_add(limit.min(total_count.saturating_sub(offset)));
+    Ok(
+      Json(Drc20HolderInventory {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        ticker: tick.to_string(),
+        inventory_complete: true,
+        total_count,
+        next_cursor: if next < total_count {
+          Some(next.to_string())
+        } else {
+          None
+        },
+        holders,
       })
       .into_response(),
     )
