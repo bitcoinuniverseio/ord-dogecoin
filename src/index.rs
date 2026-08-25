@@ -448,8 +448,27 @@ impl Index {
     self.index_dunes
   }
 
+  /// Whether this database was created with `--index-drc20`.
+  ///
+  /// The flag is recorded once, when the database is created, and read back on
+  /// every later open. Adding it to the startup command afterwards does
+  /// nothing and cannot backfill historical protocol state. A production index
+  /// built without it answers every DRC-20 query with an empty result, which
+  /// is indistinguishable from a chain that genuinely has no tokens, so this
+  /// capability has to be observable rather than inferred from an empty list.
+  pub(crate) fn has_drc20_index(&self) -> bool {
+    self.index_drc20
+  }
+
   pub(crate) fn has_sat_index(&self) -> bool {
     self.index_sats
+  }
+
+  /// Whether this database was created with `--index-transactions`. The
+  /// funding projection depends on it, so it belongs in the capability report
+  /// alongside the DRC-20 flag.
+  pub(crate) fn has_transaction_index(&self) -> bool {
+    self.index_transactions
   }
 
   pub(crate) fn info(&self) -> Result<Info> {
