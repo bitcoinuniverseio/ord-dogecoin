@@ -283,6 +283,14 @@ pub(crate) struct Server {
   redirect_http_to_https: bool,
 }
 
+/// Both messages name the flag, say it is fixed at database creation, and say
+/// a rebuild is required, because an operator reading this cannot fix it by
+/// restarting with the flag added.
+const DRC20_INDEX_ABSENT: &str =
+  "this index was created without --index-drc20 and cannot serve DRC-20 state; the flag is fixed at database creation and requires a rebuild";
+const TRANSACTION_INDEX_ABSENT: &str =
+  "this index was created without --index-transactions and cannot serve funding proofs; the flag is fixed at database creation and requires a rebuild";
+
 impl Server {
   pub(crate) fn run(self, options: Options, index: Arc<Index>, handle: Handle) -> SubcommandResult {
     Runtime::new()?.block_on(async {
@@ -2794,8 +2802,7 @@ impl Server {
     // chain has no tokens" and silently produce an empty production index.
     if !index.has_drc20_index() {
       return Err(ServerError::BadRequest(
-        "this index was created without --index-drc20 and cannot serve DRC-20 state;          the flag is fixed at database creation and requires a rebuild"
-          .to_string(),
+        DRC20_INDEX_ABSENT.to_string(),
       ));
     }
     let block_count = index.block_count()?;
@@ -2869,8 +2876,7 @@ impl Server {
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
     if !index.has_drc20_index() {
       return Err(ServerError::BadRequest(
-        "this index was created without --index-drc20 and cannot serve DRC-20 state;          the flag is fixed at database creation and requires a rebuild"
-          .to_string(),
+        DRC20_INDEX_ABSENT.to_string(),
       ));
     }
     let tick =
@@ -2942,6 +2948,15 @@ impl Server {
     }
     let limit = checked_funding_limit(query.limit)
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    // Funding proofs carry raw previous transactions, which only the
+    // transaction index can supply. Without it this endpoint returns an empty
+    // but "complete" inventory, which downstream reads as "this address has
+    // no spendable outputs" rather than "this index cannot answer".
+    if !index.has_transaction_index() {
+      return Err(ServerError::BadRequest(
+        TRANSACTION_INDEX_ABSENT.to_string(),
+      ));
+    }
     let block_count = index.block_count()?;
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
