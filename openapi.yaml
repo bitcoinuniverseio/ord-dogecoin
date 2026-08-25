@@ -10,6 +10,40 @@ servers:
     description: Wonky Prod Server
 
 paths:
+  /api/v1/capabilities:
+    get:
+      summary: Report what this index can answer
+      description: >-
+        Index feature flags are fixed when the database is created and cannot
+        be added later. Without this route, a database that never indexed
+        DRC-20 answers DRC-20 queries with an empty list, which is
+        indistinguishable from a chain with no tokens.
+      operationId: getIndexCapabilities
+      responses:
+        '200':
+          description: Chain, indexed checkpoint and index capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, block_count, block_hash, drc20, dunes, sats, transactions]
+                properties:
+                  chain:
+                    type: string
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  drc20:
+                    type: boolean
+                    description: Database was created with --index-drc20
+                  dunes:
+                    type: boolean
+                  sats:
+                    type: boolean
+                  transactions:
+                    type: boolean
+                    description: Database was created with --index-transactions
   /api/v1/drc20/tokens:
     get:
       summary: Get the DRC-20 deployment catalog with indexed protocol state
@@ -106,7 +140,9 @@ paths:
                         complete:
                           type: boolean
         '400':
-          description: Invalid cursor or limit
+          description: >-
+            Invalid cursor or limit, or this database was created without
+            --index-drc20 and cannot serve DRC-20 state
   /api/v1/drc20/tokens/{tick}/holders:
     get:
       summary: Get DRC-20 holder balances for one ticker

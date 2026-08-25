@@ -34,6 +34,10 @@ You can import the `openapi.yaml` file and view the API documentation via Import
 
 Both endpoints require an index built with `--index-drc20`. That flag is recorded when the index is created and cannot add missing historical protocol state to an existing database; an index built without it reports an empty catalog.
 
+`GET /api/v1/capabilities` reports the chain, the indexed checkpoint, and whether this database can answer DRC-20, Dunes, sat and transaction queries. It exists because index feature flags are recorded once, when the database is created, and read back on every later open: adding `--index-drc20` or `--index-transactions` to the startup command afterwards does nothing and cannot backfill historical protocol state. Without an explicit capability report, a database that never indexed DRC-20 answers every DRC-20 query with `200 []`, which downstream is indistinguishable from a chain that genuinely has no tokens. Consumers should also use it to confirm they are talking to the Dogecoin index rather than another chain's ord instance on a neighbouring port.
+
+The DRC-20 and funding endpoints fail closed with an actionable message when the corresponding capability is absent, rather than returning an empty result, and the DRC-20 payloads carry `drc20_index_enabled` so an empty catalog is never ambiguous.
+
 ## Continuous verification
 
 CI validates the locked Dogecoin dependency graph, formatting, Clippy, and the maintained protocol compatibility suite in `tests/compatibility.rs` on Linux, macOS, and Windows. The suite exercises Dune identifiers plus Dunestone script encoding and decoding against the pinned `rust-dogecoin` API.
