@@ -2,7 +2,8 @@ use ord::authority_api::{
   checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20HolderInventory,
   Drc20HolderInventoryItem, Drc20TokenInventory, Drc20TokenInventoryItem,
   Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
-  FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
+  FundingInventoryItem, IndexCapabilities, InscriptionInventory, InscriptionInventoryItem,
+  InventoryLocation,
 };
 use serde_json::json;
 
@@ -152,6 +153,7 @@ fn bounds_offset_cursors() {
 fn serializes_a_drc20_token_catalog_independent_of_transferable_inventory() {
   let inventory = Drc20TokenInventory {
     chain: "dogecoin",
+    drc20_index_enabled: true,
     block_count: 6_400_001,
     block_hash: "ab".repeat(32),
     inventory_complete: true,
@@ -198,6 +200,7 @@ fn serializes_a_drc20_token_catalog_independent_of_transferable_inventory() {
 fn serializes_drc20_holder_balances_as_exact_atomic_strings() {
   let inventory = Drc20HolderInventory {
     chain: "dogecoin",
+    drc20_index_enabled: true,
     block_count: 6_400_001,
     block_hash: "ab".repeat(32),
     ticker: "DOGI".to_string(),
@@ -223,4 +226,47 @@ fn serializes_drc20_holder_balances_as_exact_atomic_strings() {
     encoded["holders"][0]["available_atomic"],
     json!((u128::MAX - 100_000_000).to_string())
   );
+}
+
+/// RC-3 regression. A database created without `--index-drc20` answered every
+/// DRC-20 query with `200 []`, which reads downstream as "this chain has no
+/// tokens". The capability has to be reported explicitly so an empty catalog
+/// can never be mistaken for a healthy one.
+#[test]
+fn reports_index_capabilities_so_an_empty_result_is_never_ambiguous() {
+  let capabilities = IndexCapabilities {
+    chain: "dogecoin",
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    drc20: false,
+    dunes: false,
+    sats: false,
+    transactions: true,
+  };
+
+  let encoded = serde_json::to_value(capabilities).unwrap();
+  assert_eq!(encoded["chain"], json!("dogecoin"));
+  assert_eq!(encoded["drc20"], false);
+  assert_eq!(encoded["transactions"], true);
+  assert_eq!(encoded["block_count"], json!(6_400_001));
+}
+
+#[test]
+fn drc20_payloads_state_that_the_index_can_answer_drc20() {
+  let inventory = Drc20TokenInventory {
+    chain: "dogecoin",
+    drc20_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    inventory_complete: true,
+    total_count: 0,
+    next_cursor: None,
+    tokens: vec![],
+  };
+
+  let encoded = serde_json::to_value(inventory).unwrap();
+  // An empty catalog is only meaningful alongside this flag.
+  assert_eq!(encoded["drc20_index_enabled"], true);
+  assert_eq!(encoded["total_count"], json!(0));
+  assert_eq!(encoded["tokens"].as_array().unwrap().len(), 0);
 }

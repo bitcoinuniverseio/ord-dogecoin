@@ -12,6 +12,7 @@ use {
     authority_api::{
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
       Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenInventory, Drc20TokenInventoryItem,
+      IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
       resolved_content_metadata,
@@ -328,6 +329,7 @@ impl Server {
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
         )
+        .route("/api/v1/capabilities", get(Self::index_capabilities))
         .route("/api/v1/drc20/tokens", get(Self::drc20_token_inventory))
         .route(
           "/api/v1/drc20/tokens/:tick/holders",
@@ -2745,6 +2747,32 @@ impl Server {
     )
   }
 
+  /// What this database can actually answer.
+  ///
+  /// A consumer must be able to distinguish an empty DRC-20 result caused by a
+  /// chain with no tokens from one caused by a database created without
+  /// `--index-drc20`. Both used to look like `200 []`.
+  async fn index_capabilities(
+    Extension(index): Extension<Arc<Index>>,
+  ) -> ServerResult<Response> {
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    Ok(
+      Json(IndexCapabilities {
+        chain: "dogecoin",
+        block_count,
+        block_hash: block_hash.to_string(),
+        drc20: index.has_drc20_index(),
+        dunes: index.has_dune_index(),
+        sats: index.has_sat_index(),
+        transactions: index.has_transaction_index(),
+      })
+      .into_response(),
+    )
+  }
+
   /// Paged DRC-20 token catalog with indexed protocol state.
   ///
   /// `/api/v1/drc20/transferables` reports spendable marketplace inventory,
@@ -2761,6 +2789,15 @@ impl Server {
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
     let offset = checked_offset_cursor(query.cursor.as_deref())
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    // Fail closed rather than answering `200 []` from a database that never
+    // indexed DRC-20. An empty list here would be read downstream as "this
+    // chain has no tokens" and silently produce an empty production index.
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(
+        "this index was created without --index-drc20 and cannot serve DRC-20 state;          the flag is fixed at database creation and requires a rebuild"
+          .to_string(),
+      ));
+    }
     let block_count = index.block_count()?;
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
@@ -2804,6 +2841,7 @@ impl Server {
     Ok(
       Json(Drc20TokenInventory {
         chain: "dogecoin",
+        drc20_index_enabled: true,
         block_count,
         block_hash: block_hash.to_string(),
         inventory_complete: true,
@@ -2829,6 +2867,12 @@ impl Server {
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
     let offset = checked_offset_cursor(query.cursor.as_deref())
       .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(
+        "this index was created without --index-drc20 and cannot serve DRC-20 state;          the flag is fixed at database creation and requires a rebuild"
+          .to_string(),
+      ));
+    }
     let tick =
       Tick::from_str(tick.as_str()).map_err(|error| ServerError::BadRequest(error.to_string()))?;
     index
@@ -2865,6 +2909,7 @@ impl Server {
     Ok(
       Json(Drc20HolderInventory {
         chain: "dogecoin",
+        drc20_index_enabled: true,
         block_count,
         block_hash: block_hash.to_string(),
         ticker: tick.to_string(),

@@ -111,6 +111,19 @@ pub struct Drc20TransferableInventory {
 /// not a token catalog: a valid deployment with no outstanding transferable
 /// has no row there, so building an index from it hides real tokens. This
 /// projection is the catalog, taken straight from the indexed DRC-20 state.
+/// Index capabilities, so a consumer can tell "this chain has no DRC-20
+/// tokens" apart from "this database cannot answer DRC-20 questions".
+#[derive(Debug, PartialEq, Serialize)]
+pub struct IndexCapabilities {
+  pub chain: &'static str,
+  pub block_count: u32,
+  pub block_hash: String,
+  pub drc20: bool,
+  pub dunes: bool,
+  pub sats: bool,
+  pub transactions: bool,
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Drc20TokenInventoryItem {
   pub ticker: String,
@@ -132,6 +145,8 @@ pub struct Drc20TokenInventoryItem {
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Drc20TokenInventory {
   pub chain: &'static str,
+  /// False when this database was created without `--index-drc20`.
+  pub drc20_index_enabled: bool,
   pub block_count: u32,
   pub block_hash: String,
   pub inventory_complete: bool,
@@ -151,6 +166,8 @@ pub struct Drc20HolderInventoryItem {
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Drc20HolderInventory {
   pub chain: &'static str,
+  /// False when this database was created without `--index-drc20`.
+  pub drc20_index_enabled: bool,
   pub block_count: u32,
   pub block_hash: String,
   pub ticker: String,
