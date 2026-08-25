@@ -10,6 +10,169 @@ servers:
     description: Wonky Prod Server
 
 paths:
+  /api/v1/drc20/tokens:
+    get:
+      summary: Get the DRC-20 deployment catalog with indexed protocol state
+      description: >-
+        Returns deployed DRC-20 tokens and their protocol state. This is not
+        the transferable inventory: a deployment with no outstanding
+        transferable still appears here. Requires an index built with
+        --index-drc20.
+      operationId: getDrc20TokenCatalog
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Decimal offset over the deterministic ticker order
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of tokens (1-1000, default 250)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        '200':
+          description: Paged DRC-20 deployment catalog at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, block_count, block_hash, inventory_complete, total_count, tokens]
+                properties:
+                  chain:
+                    type: string
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  total_count:
+                    type: integer
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  tokens:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - ticker
+                        - deploy_inscription_id
+                        - deploy_inscription_number
+                        - decimals
+                        - max_atomic
+                        - limit_atomic
+                        - minted_atomic
+                        - remaining_atomic
+                        - holder_count
+                        - deployed_height
+                        - deployed_timestamp
+                        - deployed_by
+                        - latest_mint_number
+                        - complete
+                      properties:
+                        ticker:
+                          type: string
+                        deploy_inscription_id:
+                          type: string
+                        deploy_inscription_number:
+                          type: string
+                        decimals:
+                          type: integer
+                        max_atomic:
+                          type: string
+                        limit_atomic:
+                          type: string
+                        minted_atomic:
+                          type: string
+                        remaining_atomic:
+                          type: string
+                        holder_count:
+                          type: integer
+                        deployed_height:
+                          type: integer
+                        deployed_timestamp:
+                          type: integer
+                        deployed_by:
+                          type: string
+                        latest_mint_number:
+                          type: string
+                        complete:
+                          type: boolean
+        '400':
+          description: Invalid cursor or limit
+  /api/v1/drc20/tokens/{tick}/holders:
+    get:
+      summary: Get DRC-20 holder balances for one ticker
+      operationId: getDrc20TokenHolders
+      parameters:
+        - name: tick
+          in: path
+          required: true
+          description: DRC-20 ticker
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          description: Decimal offset over the deterministic holder order
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of holders (1-1000, default 250)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        '200':
+          description: Paged holder balances in atomic units
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, block_count, block_hash, ticker, inventory_complete, total_count, holders]
+                properties:
+                  chain:
+                    type: string
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  ticker:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  total_count:
+                    type: integer
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  holders:
+                    type: array
+                    items:
+                      type: object
+                      required: [address, overall_atomic, transferable_atomic, available_atomic]
+                      properties:
+                        address:
+                          type: string
+                        overall_atomic:
+                          type: string
+                        transferable_atomic:
+                          type: string
+                        available_atomic:
+                          type: string
+        '404':
+          description: Unknown DRC-20 ticker
   /api/v1/funding/{address}:
     get:
       summary: Get confirmed cardinal funding proofs
