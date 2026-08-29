@@ -33,7 +33,9 @@ pub fn checked_offset_cursor(cursor: Option<&str>) -> Result<usize, &'static str
   if cursor.is_empty() || cursor.len() > 19 || !cursor.bytes().all(|b| b.is_ascii_digit()) {
     return Err("cursor must be a decimal offset");
   }
-  cursor.parse::<usize>().map_err(|_| "cursor is out of range")
+  cursor
+    .parse::<usize>()
+    .map_err(|_| "cursor is out of range")
 }
 
 pub(crate) fn resolved_content_metadata(
@@ -153,6 +155,16 @@ pub struct Drc20TokenInventory {
   pub total_count: usize,
   pub next_cursor: Option<String>,
   pub tokens: Vec<Drc20TokenInventoryItem>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Drc20TokenDetail {
+  pub chain: &'static str,
+  pub drc20_index_enabled: bool,
+  pub block_count: u32,
+  pub block_hash: String,
+  pub inventory_complete: bool,
+  pub token: Drc20TokenInventoryItem,
 }
 
 #[derive(Debug, PartialEq, Serialize)]

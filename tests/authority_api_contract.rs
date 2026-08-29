@@ -1,6 +1,6 @@
 use ord::authority_api::{
   checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20HolderInventory,
-  Drc20HolderInventoryItem, Drc20TokenInventory, Drc20TokenInventoryItem,
+  Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem,
   Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
   FundingInventoryItem, IndexCapabilities, InscriptionInventory, InscriptionInventoryItem,
   InventoryLocation,
@@ -182,7 +182,10 @@ fn serializes_a_drc20_token_catalog_independent_of_transferable_inventory() {
   assert_eq!(encoded["chain"], json!("dogecoin"));
   assert_eq!(encoded["inventory_complete"], true);
   assert_eq!(encoded["next_cursor"], json!("250"));
-  assert_eq!(encoded["tokens"][0]["max_atomic"], json!(u128::MAX.to_string()));
+  assert_eq!(
+    encoded["tokens"][0]["max_atomic"],
+    json!(u128::MAX.to_string())
+  );
   assert_eq!(
     encoded["tokens"][0]["remaining_atomic"],
     json!(u128::MAX.to_string())
@@ -269,4 +272,40 @@ fn drc20_payloads_state_that_the_index_can_answer_drc20() {
   assert_eq!(encoded["drc20_index_enabled"], true);
   assert_eq!(encoded["total_count"], json!(0));
   assert_eq!(encoded["tokens"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn serializes_one_drc20_definition_with_the_same_exact_contract() {
+  let detail = Drc20TokenDetail {
+    chain: "dogecoin",
+    drc20_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    inventory_complete: true,
+    token: Drc20TokenInventoryItem {
+      ticker: "DOGI".to_string(),
+      deploy_inscription_id: format!("{}i0", "cd".repeat(32)),
+      deploy_inscription_number: "1".to_string(),
+      decimals: 8,
+      max_atomic: u128::MAX.to_string(),
+      limit_atomic: "100000000".to_string(),
+      minted_atomic: "200000000".to_string(),
+      remaining_atomic: (u128::MAX - 200_000_000).to_string(),
+      holder_count: 1,
+      deployed_height: 5_000_000,
+      deployed_timestamp: 1_700_000_000,
+      deployed_by: "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq".to_string(),
+      latest_mint_number: "2".to_string(),
+      complete: false,
+    },
+  };
+
+  let encoded = serde_json::to_value(detail).unwrap();
+  assert_eq!(encoded["chain"], json!("dogecoin"));
+  assert_eq!(encoded["inventory_complete"], true);
+  assert_eq!(encoded["token"]["max_atomic"], json!(u128::MAX.to_string()));
+  assert_eq!(
+    encoded["token"]["remaining_atomic"],
+    json!((u128::MAX - 200_000_000).to_string())
+  );
 }
