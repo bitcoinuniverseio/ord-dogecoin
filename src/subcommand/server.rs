@@ -11,8 +11,8 @@ use {
   crate::{
     authority_api::{
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
-      Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenInventory, Drc20TokenInventoryItem,
-      IndexCapabilities,
+      Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory,
+      Drc20TokenInventoryItem, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
       resolved_content_metadata,
@@ -339,6 +339,7 @@ impl Server {
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
         .route("/api/v1/drc20/tokens", get(Self::drc20_token_inventory))
+        .route("/api/v1/drc20/tokens/:tick", get(Self::drc20_token_detail))
         .route(
           "/api/v1/drc20/tokens/:tick/holders",
           get(Self::drc20_holder_inventory),
@@ -2859,6 +2860,59 @@ impl Server {
           None
         },
         tokens,
+      })
+      .into_response(),
+    )
+  }
+
+  async fn drc20_token_detail(
+    Extension(index): Extension<Arc<Index>>,
+    Path(tick): Path<String>,
+  ) -> ServerResult<Response> {
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(
+        DRC20_INDEX_ABSENT.to_string(),
+      ));
+    }
+    let tick =
+      Tick::from_str(tick.as_str()).map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let info = index
+      .get_drc20_token_info(&tick.clone())?
+      .ok_or_not_found(|| format!("DRC-20 token {tick}"))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let holder_count = index
+      .get_drc20_token_holder(&info.tick.clone())
+      .map(|holders| holders.len())
+      .unwrap_or(0);
+    let remaining = info.supply.saturating_sub(info.minted);
+
+    Ok(
+      Json(Drc20TokenDetail {
+        chain: "dogecoin",
+        drc20_index_enabled: true,
+        block_count,
+        block_hash: block_hash.to_string(),
+        inventory_complete: true,
+        token: Drc20TokenInventoryItem {
+          ticker: info.tick.to_string(),
+          deploy_inscription_id: info.inscription_id.to_string(),
+          deploy_inscription_number: info.inscription_number.to_string(),
+          decimals: info.decimal,
+          max_atomic: info.supply.to_string(),
+          limit_atomic: info.limit_per_mint.to_string(),
+          minted_atomic: info.minted.to_string(),
+          remaining_atomic: remaining.to_string(),
+          holder_count,
+          deployed_height: u32::try_from(info.deployed_number)
+            .map_err(|error| ServerError::BadRequest(error.to_string()))?,
+          deployed_timestamp: info.deployed_timestamp,
+          deployed_by: info.deploy_by.to_string(),
+          latest_mint_number: info.latest_mint_number.to_string(),
+          complete: info.minted >= info.supply,
+        },
       })
       .into_response(),
     )
