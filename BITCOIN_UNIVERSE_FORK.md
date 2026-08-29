@@ -13,7 +13,7 @@ changes must pass the pinned Linux, macOS, and Windows CI before promotion to
 `main`.
 
 CI compiles the production library and binaries on Linux, macOS, and Windows,
-runs Clippy's enforced correctness lints, tests the exact canonical authority
+runs Clippy's enforced correctness lints, tests the exact authoritative authority
 JSON contract, builds the release binary, smoke-tests its CLI, and builds the
 documentation. The inherited inline upstream test modules are not a release
 gate because this source snapshot combines incompatible Bitcoin API, redb,
