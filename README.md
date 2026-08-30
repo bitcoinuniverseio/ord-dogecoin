@@ -34,6 +34,12 @@ You can import the `openapi.yaml` file and view the API documentation via Import
 
 Both endpoints require an index built with `--index-drc20`. That flag is recorded when the index is created and cannot add missing historical protocol state to an existing database; an index built without it reports an empty catalog.
 
+`GET /api/v1/dunes/tokens?cursor=0&limit=250` returns the dune catalog with its indexed protocol state: the spaced name, the `block:index` identifier of the etching, number, symbol (null when none was etched), divisibility, etching txid, `supply_atomic`, `premine_atomic`, `mints_atomic`, `burned_atomic`, etched height and timestamp, and whether the terms allow a mint in the next block. Every quantity is a string, so a `u128` supply is never rounded through a JSON number, and `divisibility` is the only rule by which one may be scaled. The same limit bounds and deterministic offset-cursor semantics apply, ordered by etching.
+
+`GET /api/v1/dunes/tokens/{dune}` returns one dune by spaced name or `block:index` identifier, with the same item contract.
+
+Both dune endpoints require an index built with `--index-dunes` and refuse to answer from a database created without it, for the same reason the DRC-20 endpoints do.
+
 `GET /api/v1/capabilities` reports the chain, the indexed checkpoint, and whether this database can answer DRC-20, Dunes, sat and transaction queries. It exists because index feature flags are recorded once, when the database is created, and read back on every later open: adding `--index-drc20` or `--index-transactions` to the startup command afterwards does nothing and cannot backfill historical protocol state. Without an explicit capability report, a database that never indexed DRC-20 answers every DRC-20 query with `200 []`, which downstream is indistinguishable from a chain that genuinely has no tokens. Consumers should also use it to confirm they are talking to the Dogecoin index rather than another chain's ord instance on a neighbouring port.
 
 The DRC-20 and funding endpoints fail closed with an actionable message when the corresponding capability is absent, rather than returning an empty result, and the DRC-20 payloads carry `drc20_index_enabled` so an empty catalog is never ambiguous.
