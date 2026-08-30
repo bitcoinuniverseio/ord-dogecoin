@@ -30,10 +30,16 @@ install -m 0644 deploy/linux/universe-dogecoin-health.service /etc/systemd/syste
 install -m 0644 deploy/linux/universe-dogecoin-health.timer /etc/systemd/system/
 install -m 0644 deploy/linux/universe-dogecoin-snapshot.service /etc/systemd/system/
 install -m 0644 deploy/linux/universe-dogecoin-snapshot.timer /etc/systemd/system/
+install -m 0644 deploy/linux/universe-ord-dogecoin-full.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now universe-dogecoin-health.timer
 systemctl enable --now universe-dogecoin-snapshot.timer
+systemctl enable universe-ord-dogecoin-full.service
 ```
+
+Enabling the full-index unit makes it survive a reboot but does not start it.
+Start it only after confirming its separate database path is unused, its volume
+has adequate headroom, and the primary ord-dogecoin service is still healthy.
 
 The health result is written atomically to
 `/var/lib/universe-dogecoin-health/status.json`. Historical samples are appended
