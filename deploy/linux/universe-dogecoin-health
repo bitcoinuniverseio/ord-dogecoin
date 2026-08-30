@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+STATE_DIR=${STATE_DIR:-/var/lib/universe-dogecoin-health}
+STATE_FILE=${STATE_FILE:-$STATE_DIR/status.json}
+HISTORY_FILE=${HISTORY_FILE:-$STATE_DIR/history.jsonl}
+DOGECOIN_CLI=${DOGECOIN_CLI:-/opt/universe-dogecoin/dogecoin-1.14.9/bin/dogecoin-cli}
+DOGECOIN_DATADIR=${DOGECOIN_DATADIR:-/data/indexers-b/dogecoin}
+DOGECOIN_CONF=${DOGECOIN_CONF:-/etc/universe-dogecoin/dogecoin.conf}
+ORD_URL=${ORD_URL:-http://127.0.0.1:8390}
+TAP_URL=${TAP_URL:-https://127.0.0.1:3013}
+TAP_BEARER_TOKEN=${TAP_API_TOKEN:-${TOKEN_EXPLORER_BEARER_TOKEN:-}}
+ORD_DB=${ORD_DB:-/data/indexers-b/ord-dogecoin/doginals.redb}
+FULL_ORD_URL=${FULL_ORD_URL:-http://127.0.0.1:8391}
+FULL_ORD_DB=${FULL_ORD_DB:-/data/indexers-c/ord-dogecoin-full/index-all.redb}
+TAP_DB=${TAP_DB:-/data/indexers-b/doge-tap/live/index-doge-tap.sqlite}
+MAX_ORD_LAG_BLOCKS=${MAX_ORD_LAG_BLOCKS:-100}
+ORD_STALL_SECONDS=${ORD_STALL_SECONDS:-7200}
+MIN_ORD_VOLUME_FREE_BYTES=${MIN_ORD_VOLUME_FREE_BYTES:-107374182400}
+MIN_BUILD_VOLUME_FREE_BYTES=${MIN_BUILD_VOLUME_FREE_BYTES:-214748364800}
+REQUIRE_DRC20=${REQUIRE_DRC20:-0}
+REQUIRE_DUNES=${REQUIRE_DUNES:-0}
+REQUIRE_TRANSACTIONS=${REQUIRE_TRANSACTIONS:-0}
+REQUIRE_FULL_INDEX=${REQUIRE_FULL_INDEX:-1}
+
+mkdir -p "$STATE_DIR"
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+now_epoch=$(date +%s)
+problems=()
+
+problem() {
+  problems+=("$1: $2")
+}
+
+service_state() {
+  systemctl is-active "$1" 2>/dev/null || true
+}
+
+core_state=$(service_state universe-dogecoin.service)
+ord_state=$(service_state universe-ord-dogecoin.service)
+tap_state=$(service_state universe-index-doge-tap.service)
+[[ $core_state == active ]] || problem core_service "state=$core_state"
+[[ $ord_state == active ]] || problem ord_service "state=$ord_state"
+[[ $tap_state == active ]] || problem tap_service "state=$tap_state"
+
+node_json=$($DOGECOIN_CLI -datadir="$DOGECOIN_DATADIR" -conf="$DOGECOIN_CONF" getblockchaininfo 2>/dev/null || true)
+if jq -e '.blocks >= 0 and .headers >= 0 and (.bestblockhash | type == "string")' >/dev/null 2>&1 <<<"$node_json"; then
+  node_height=$(jq -r '.blocks' <<<"$node_json")
+  node_headers=$(jq -r '.headers' <<<"$node_json")
+  node_hash=$(jq -r '.bestblockhash' <<<"$node_json")
+  node_ibd=$(jq -r '.initialblockdownload' <<<"$node_json")
+  [[ $node_ibd == false ]] || problem core_initial_download "blocks=$node_height headers=$node_headers"
+else
+  node_height=null
+  node_headers=null
+  node_hash=null
+  node_ibd=null
+  problem core_rpc "getblockchaininfo failed"
+fi
+
+ord_json=$(curl -fsS --max-time 20 "$ORD_URL/api/v1/capabilities" 2>/dev/null || true)
+if jq -e '.chain == "dogecoin" and (.block_count | type == "number") and (.block_hash | type == "string")' >/dev/null 2>&1 <<<"$ord_json"; then
+  ord_block_count=$(jq -r '.block_count' <<<"$ord_json")
+  ord_height=$((ord_block_count - 1))
+  ord_hash=$(jq -r '.block_hash' <<<"$ord_json")
+  ord_drc20=$(jq -r '.drc20' <<<"$ord_json")
+  ord_dunes=$(jq -r '.dunes' <<<"$ord_json")
+  ord_transactions=$(jq -r '.transactions' <<<"$ord_json")
+else
+  ord_block_count=null
+  ord_height=null
+  ord_hash=null
+  ord_drc20=null
+  ord_dunes=null
+  ord_transactions=null
+  problem ord_api "capability probe failed"
+fi
+
+lag=null
+chain_identity=null
+last_ord_advance_at=$now
+ord_rate_blocks_per_hour=null
+if [[ $node_height != null && $ord_height != null ]]; then
+  lag=$((node_height - ord_height))
+  if (( lag < 0 || lag > MAX_ORD_LAG_BLOCKS )); then
+    problem ord_lag "node=$node_height ord=$ord_height lag=$lag"
+  fi
+
+  indexed_node_hash=$($DOGECOIN_CLI -datadir="$DOGECOIN_DATADIR" -conf="$DOGECOIN_CONF" getblockhash "$ord_height" 2>/dev/null || true)
+  if [[ $indexed_node_hash == "$ord_hash" ]]; then
+    chain_identity=true
+  else
+    chain_identity=false
+    problem ord_chain_identity "ord=$ord_hash core=$indexed_node_hash height=$ord_height"
+  fi
+
+  if [[ -s $STATE_FILE ]]; then
+    previous_height=$(jq -r '.ord.height // -1' "$STATE_FILE" 2>/dev/null || echo -1)
+    previous_advance=$(jq -r '.ord.lastAdvanceAt // empty' "$STATE_FILE" 2>/dev/null || true)
+    previous_checked=$(jq -r '.checkedAt // empty' "$STATE_FILE" 2>/dev/null || true)
+    previous_epoch=$(date -d "$previous_checked" +%s 2>/dev/null || echo "$now_epoch")
+    elapsed=$((now_epoch - previous_epoch))
+    if (( previous_height >= 0 && ord_height >= previous_height && elapsed > 0 )); then
+      ord_rate_blocks_per_hour=$(jq -n --argjson delta "$((ord_height - previous_height))" --argjson elapsed "$elapsed" '$delta * 3600 / $elapsed')
+    fi
+    if (( ord_height <= previous_height )) && [[ -n $previous_advance ]]; then
+      last_ord_advance_at=$previous_advance
+    fi
+  fi
+  advance_epoch=$(date -d "$last_ord_advance_at" +%s 2>/dev/null || echo "$now_epoch")
+  if (( lag > MAX_ORD_LAG_BLOCKS && now_epoch - advance_epoch > ORD_STALL_SECONDS )); then
+    problem ord_stalled "height=$ord_height last_advance=$last_ord_advance_at"
+  fi
+fi
+
+[[ $REQUIRE_DRC20 != 1 || $ord_drc20 == true ]] || problem ord_drc20 "required capability is absent"
+[[ $REQUIRE_DUNES != 1 || $ord_dunes == true ]] || problem ord_dunes "required capability is absent"
+[[ $REQUIRE_TRANSACTIONS != 1 || $ord_transactions == true ]] || problem ord_transactions "required capability is absent"
+
+full_state=$(service_state universe-ord-dogecoin-full.service)
+full_height=null
+full_hash=null
+full_lag=null
+full_identity=null
+full_drc20=null
+full_dunes=null
+full_transactions=null
+if [[ $full_state == active ]]; then
+  full_json=$(curl -fsS --max-time 20 "$FULL_ORD_URL/api/v1/capabilities" 2>/dev/null || true)
+  if jq -e '.chain == "dogecoin" and (.block_count | type == "number") and (.block_hash | type == "string")' >/dev/null 2>&1 <<<"$full_json"; then
+    full_count=$(jq -r '.block_count' <<<"$full_json")
+    full_height=$((full_count - 1))
+    full_hash=$(jq -r '.block_hash' <<<"$full_json")
+    full_drc20=$(jq -r '.drc20' <<<"$full_json")
+    full_dunes=$(jq -r '.dunes' <<<"$full_json")
+    full_transactions=$(jq -r '.transactions' <<<"$full_json")
+    if [[ $node_height != null ]]; then
+      full_lag=$((node_height - full_height))
+      if (( full_lag < 0 || full_lag > MAX_ORD_LAG_BLOCKS )); then
+        problem full_ord_lag "node=$node_height ord=$full_height lag=$full_lag"
+      fi
+      full_node_hash=$($DOGECOIN_CLI -datadir="$DOGECOIN_DATADIR" -conf="$DOGECOIN_CONF" getblockhash "$full_height" 2>/dev/null || true)
+      if [[ $full_node_hash == "$full_hash" ]]; then
+        full_identity=true
+      else
+        full_identity=false
+        problem full_ord_chain_identity "height=$full_height"
+      fi
+    fi
+    [[ $full_drc20 == true ]] || problem full_ord_drc20 "capability is absent"
+    [[ $full_dunes == true ]] || problem full_ord_dunes "capability is absent"
+    [[ $full_transactions == true ]] || problem full_ord_transactions "capability is absent"
+  else
+    problem full_ord_api "capability probe failed"
+  fi
+elif [[ $REQUIRE_FULL_INDEX == 1 ]]; then
+  problem full_ord_service "state=$full_state"
+fi
+
+tap_ready_json=$(curl -kfsS --max-time 20 "$TAP_URL/ready" 2>/dev/null || true)
+tap_ready=$(jq -r 'if .ready == true or .status == "ready" then true else false end' <<<"$tap_ready_json" 2>/dev/null || true)
+[[ $tap_ready == true || $tap_ready == false ]] || tap_ready=false
+tap_ready_detail=$(jq -c '.' <<<"$tap_ready_json" 2>/dev/null || true)
+[[ -n $tap_ready_detail ]] || tap_ready_detail=endpoint_unavailable
+[[ $tap_ready == true ]] || problem tap_readiness "$tap_ready_detail"
+
+tap_status=null
+if [[ -n $TAP_BEARER_TOKEN ]]; then
+  tap_status_raw=$(curl -kfsS --max-time 30 -H "authorization: Bearer $TAP_BEARER_TOKEN" "$TAP_URL/status" 2>/dev/null || true)
+  if jq -e '.status' >/dev/null 2>&1 <<<"$tap_status_raw"; then
+    tap_status=$(jq -c '{status,identity,coverage,reader,sync,counts,journal}' <<<"$tap_status_raw")
+  else
+    problem tap_status "authenticated status probe failed"
+  fi
+fi
+
+ord_db_size=$(stat -c %s "$ORD_DB" 2>/dev/null || echo null)
+ord_db_mtime=$(stat -c %y "$ORD_DB" 2>/dev/null || echo null)
+tap_db_size=$(stat -c %s "$TAP_DB" 2>/dev/null || echo null)
+full_db_size=$(stat -c %s "$FULL_ORD_DB" 2>/dev/null || echo null)
+ord_free=$(df -B1 --output=avail "$(dirname "$ORD_DB")" 2>/dev/null | tail -1 | tr -d ' ')
+build_free=$(df -B1 --output=avail /data/indexers-c 2>/dev/null | tail -1 | tr -d ' ')
+[[ $ord_free =~ ^[0-9]+$ ]] || ord_free=0
+[[ $build_free =~ ^[0-9]+$ ]] || build_free=0
+(( ord_free >= MIN_ORD_VOLUME_FREE_BYTES )) || problem ord_storage "free_bytes=$ord_free threshold=$MIN_ORD_VOLUME_FREE_BYTES"
+(( build_free >= MIN_BUILD_VOLUME_FREE_BYTES )) || problem build_storage "free_bytes=$build_free threshold=$MIN_BUILD_VOLUME_FREE_BYTES"
+
+problems_json=$(printf '%s\n' "${problems[@]:-}" | jq -Rsc 'split("\n") | map(select(length > 0))')
+healthy=true
+(( ${#problems[@]} == 0 )) || healthy=false
+
+record=$(jq -n \
+  --arg checkedAt "$now" \
+  --argjson healthy "$healthy" \
+  --arg coreState "$core_state" --arg ordState "$ord_state" --arg tapState "$tap_state" \
+  --argjson nodeHeight "$node_height" --argjson nodeHeaders "$node_headers" --arg nodeHash "$node_hash" --argjson nodeIbd "$node_ibd" \
+  --argjson ordBlockCount "$ord_block_count" --argjson ordHeight "$ord_height" --arg ordHash "$ord_hash" --argjson lag "$lag" --argjson identity "$chain_identity" --argjson rate "$ord_rate_blocks_per_hour" \
+  --argjson drc20 "$ord_drc20" --argjson dunes "$ord_dunes" --argjson transactions "$ord_transactions" --arg lastAdvanceAt "$last_ord_advance_at" \
+  --arg fullState "$full_state" --argjson fullHeight "$full_height" --arg fullHash "$full_hash" --argjson fullLag "$full_lag" --argjson fullIdentity "$full_identity" --argjson fullDrc20 "$full_drc20" --argjson fullDunes "$full_dunes" --argjson fullTransactions "$full_transactions" --argjson fullDbSize "$full_db_size" \
+  --argjson tapReady "$tap_ready" --argjson tapStatus "$tap_status" \
+  --argjson ordDbSize "$ord_db_size" --arg ordDbMtime "$ord_db_mtime" --argjson tapDbSize "$tap_db_size" \
+  --argjson ordFree "$ord_free" --argjson buildFree "$build_free" --argjson problems "$problems_json" \
+  '{checkedAt:$checkedAt,healthy:$healthy,services:{core:$coreState,ord:$ordState,fullOrd:$fullState,tap:$tapState},core:{height:$nodeHeight,headers:$nodeHeaders,bestHash:$nodeHash,initialBlockDownload:$nodeIbd},ord:{blockCount:$ordBlockCount,height:$ordHeight,hash:$ordHash,lag:$lag,chainIdentityAgrees:$identity,drc20:$drc20,dunes:$dunes,transactions:$transactions,lastAdvanceAt:$lastAdvanceAt,rateBlocksPerHour:$rate,databaseSize:$ordDbSize,databaseMtime:$ordDbMtime},fullOrd:{height:$fullHeight,hash:$fullHash,lag:$fullLag,chainIdentityAgrees:$fullIdentity,drc20:$fullDrc20,dunes:$fullDunes,transactions:$fullTransactions,databaseSize:$fullDbSize},tap:{ready:$tapReady,databaseSize:$tapDbSize,status:$tapStatus},storage:{ordVolumeFreeBytes:$ordFree,buildVolumeFreeBytes:$buildFree},problems:$problems}')
+
+tmp="$STATE_FILE.tmp"
+printf '%s\n' "$record" > "$tmp"
+chmod 0640 "$tmp"
+mv -f "$tmp" "$STATE_FILE"
+printf '%s\n' "$record" >> "$HISTORY_FILE"
+chmod 0640 "$HISTORY_FILE"
+
+if [[ $healthy == false ]]; then
+  printf 'Dogecoin stack degraded: %s\n' "$(jq -r '.problems | join(" | ")' <<<"$record")" >&2
+  exit 1
+fi
+
+printf 'Dogecoin stack healthy: core=%s ord=%s lag=%s tap=%s\n' "$node_height" "$ord_height" "$lag" "$tap_ready"

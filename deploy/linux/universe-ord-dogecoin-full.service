@@ -1,0 +1,53 @@
+[Unit]
+Description=Universe Ord Dogecoin DRC-20, Dunes, and transaction index
+Requires=universe-dogecoin.service
+After=universe-dogecoin.service
+RequiresMountsFor=/data/indexers-c/ord-dogecoin-full
+ConditionPathIsDirectory=/data/indexers-c/ord-dogecoin-full
+
+[Service]
+Type=simple
+User=universe-ord-dogecoin
+Group=universe-ord-dogecoin
+SupplementaryGroups=universe-dogecoin
+WorkingDirectory=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a
+UMask=0027
+Environment=SUBSIDIES_PATH=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/subsidies.json
+Environment=STARTING_SATS_PATH=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/starting_sats.json
+Environment=RUST_LOG=info
+ExecStart=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/ord --rpc-url=http://127.0.0.1:22566 --cookie-file=/etc/universe-dogecoin/ord-rpc.cookie --index=/data/indexers-c/ord-dogecoin-full/index-all.redb --first-inscription-height=4609723 --db-cache-size=8589934592 --index-drc20 --index-dunes --index-transactions --nr-parallel-requests=4 server --http --address=127.0.0.1 --http-port=8391
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStartSec=10min
+TimeoutStopSec=30min
+SendSIGKILL=no
+LimitNOFILE=65536
+MemoryHigh=8G
+MemoryMax=12G
+Nice=15
+CPUWeight=10
+IOWeight=10
+IOSchedulingClass=idle
+OOMScoreAdjust=500
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/universe-dogecoin /opt/universe-ord-dogecoin
+ReadWritePaths=/data/indexers-c/ord-dogecoin-full /var/lib/universe-ord-dogecoin
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

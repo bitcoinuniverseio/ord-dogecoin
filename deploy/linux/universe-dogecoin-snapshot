@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DATASET=tap
+SOURCE_DB=${SOURCE_DB:-/data/indexers-b/doge-tap/live/index-doge-tap.sqlite}
+SNAPSHOT_ROOT=${SNAPSHOT_ROOT:-/data/indexers-c/dogecoin-snapshots}
+REMOTE_ROOT=${REMOTE_ROOT:-universe-b2-indexers:universe-indexer-backups-hot/dogecoin}
+BACKUP_HELPER=${BACKUP_HELPER:-/usr/local/libexec/universe/sqlite-online-backup.py}
+DOGECOIN_CLI=${DOGECOIN_CLI:-/opt/universe-dogecoin/dogecoin-1.14.9/bin/dogecoin-cli}
+DOGECOIN_DATADIR=${DOGECOIN_DATADIR:-/data/indexers-b/dogecoin}
+DOGECOIN_CONF=${DOGECOIN_CONF:-/etc/universe-dogecoin/dogecoin.conf}
+TAP_URL=${TAP_URL:-https://127.0.0.1:3013}
+TAP_BEARER_TOKEN=${TAP_API_TOKEN:-${TOKEN_EXPLORER_BEARER_TOKEN:-}}
+INDEXER_REPOSITORY=${INDEXER_REPOSITORY:-https://github.com/bitcoinuniverseio/index-doge-tap}
+KEEP_LOCAL=${KEEP_LOCAL:-3}
+KEEP_REMOTE_DAILY=${KEEP_REMOTE_DAILY:-7}
+KEEP_REMOTE_WEEKLY=${KEEP_REMOTE_WEEKLY:-4}
+
+log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+
+[[ $SNAPSHOT_ROOT == /*/dogecoin-snapshots ]] || { log "unsafe SNAPSHOT_ROOT: $SNAPSHOT_ROOT"; exit 2; }
+[[ $REMOTE_ROOT == *:*/dogecoin ]] || { log "unsafe REMOTE_ROOT: $REMOTE_ROOT"; exit 2; }
+
+ready=$(curl -kfsS --max-time 30 "$TAP_URL/ready")
+jq -e '.ready == true' >/dev/null <<<"$ready"
+if [[ -n $TAP_BEARER_TOKEN ]]; then
+  status=$(curl -kfsS --max-time 30 -H "authorization: Bearer $TAP_BEARER_TOKEN" "$TAP_URL/status")
+else
+  status='{}'
+fi
+
+chain=$($DOGECOIN_CLI -datadir="$DOGECOIN_DATADIR" -conf="$DOGECOIN_CONF" getblockchaininfo)
+jq -e '.initialblockdownload == false and .blocks == .headers' >/dev/null <<<"$chain"
+height=$(jq -r '.blocks' <<<"$chain")
+block_hash=$(jq -r '.bestblockhash' <<<"$chain")
+
+stamp=$(date -u +%Y-%m-%dT%H%M%SZ)
+created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+day=${stamp%%T*}
+destination="$SNAPSHOT_ROOT/$DATASET/$day"
+remote="$REMOTE_ROOT/$DATASET/daily/$day"
+mkdir -p "$destination"
+
+base="tap-dogecoin-$height-$stamp.sqlite"
+raw="$destination/$base.partial"
+archive="$destination/$base.zst"
+manifest="$destination/manifest.json"
+sums="$destination/SHA256SUMS"
+
+[[ ! -e $raw && ! -e $archive ]] || { log "snapshot already exists for $stamp"; exit 1; }
+trap 'rm -f "$raw" "$archive.partial"' EXIT
+
+log "creating a transactionally consistent SQLite backup"
+"$BACKUP_HELPER" "$SOURCE_DB" "$raw"
+mv "$raw" "$destination/$base"
+raw="$destination/$base"
+
+log "compressing backup"
+zstd -q -T2 -6 "$raw" -o "$archive.partial"
+mv "$archive.partial" "$archive"
+rm -f "$raw"
+
+sha256=$(sha256sum "$archive" | awk '{print $1}')
+sha1=$(sha1sum "$archive" | awk '{print $1}')
+size=$(stat -c %s "$archive")
+indexer_commit=$(basename "$(readlink -f /opt/universe-index-doge-tap/current 2>/dev/null || echo unknown)")
+indexer_version=$(jq -r '.version // "unknown"' /opt/universe-index-doge-tap/current/package.json 2>/dev/null || echo unknown)
+source_version=$(jq -r '.identity.readerVersion // .reader.version // "unknown"' <<<"$status")
+
+jq -n \
+  --arg network dogecoin-mainnet --argjson block_height "$height" --arg block_hash "$block_hash" \
+  --arg created_at "$created_at" --arg indexer_repository "$INDEXER_REPOSITORY" --arg indexer_commit "$indexer_commit" \
+  --arg indexer_version "$indexer_version" --arg source_version "$source_version" --arg database_format sqlite3 --arg file "$(basename "$archive")" \
+  --argjson file_size "$size" --arg sha256 "$sha256" --arg sha1 "$sha1" --argjson source_status "$status" \
+  '{network:$network,block_height:$block_height,block_hash:$block_hash,created_at:$created_at,indexer_repository:$indexer_repository,indexer_commit:$indexer_commit,indexer_version:$indexer_version,source_version:$source_version,database_format:$database_format,enabled_indexes:["tap"],file:$file,file_size:$file_size,sha256:$sha256,transport_sha1:$sha1,source_status:$source_status}' > "$manifest"
+printf '%s  %s\n' "$sha256" "$(basename "$archive")" > "$sums"
+
+log "uploading verified snapshot"
+rclone copyto --checksum "$archive" "$remote/$(basename "$archive")"
+rclone copyto "$manifest" "$remote/manifest.json"
+rclone copyto "$sums" "$remote/SHA256SUMS"
+remote_sha1=$(rclone sha1sum "$remote/$(basename "$archive")" | awk 'NR == 1 {print $1}')
+[[ $remote_sha1 == "$sha1" ]] || { log "remote object hash mismatch"; exit 1; }
+
+latest="$destination/latest.json"
+jq -n --arg dataset "$DATASET" --arg date "$day" --arg manifest "$remote/manifest.json" --arg sha256 "$sha256" \
+  '{dataset:$dataset,date:$date,manifest:$manifest,sha256:$sha256}' > "$latest"
+rclone copyto "$latest" "$REMOTE_ROOT/$DATASET/latest.json"
+
+if [[ $(date -u +%u) == 7 ]]; then
+  weekly="$REMOTE_ROOT/$DATASET/weekly/$day"
+  rclone copy "$remote" "$weekly"
+fi
+
+mapfile -t stale_local < <(find "$SNAPSHOT_ROOT/$DATASET" -mindepth 1 -maxdepth 1 -type d -name '????-??-??' -printf '%T@ %p\n' | sort -nr | tail -n +$((KEEP_LOCAL + 1)) | cut -d' ' -f2-)
+for path in "${stale_local[@]:-}"; do
+  [[ $path == "$SNAPSHOT_ROOT/$DATASET/"????-??-?? ]] || continue
+  rm -rf -- "$path"
+done
+
+prune_remote() {
+  local prefix=$1 keep=$2 name
+  [[ $prefix == *:*/dogecoin/tap/* ]] || { log "refusing unsafe remote prune: $prefix"; return 1; }
+  while IFS= read -r name; do
+    [[ $name =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}/$ ]] || continue
+    rclone purge "$prefix/$name"
+  done < <(rclone lsf --dirs-only "$prefix" | sort -r | tail -n +$((keep + 1)))
+}
+prune_remote "$REMOTE_ROOT/$DATASET/daily" "$KEEP_REMOTE_DAILY"
+prune_remote "$REMOTE_ROOT/$DATASET/weekly" "$KEEP_REMOTE_WEEKLY"
+
+trap - EXIT
+log "snapshot complete: $archive ($size bytes, sha256 $sha256)"

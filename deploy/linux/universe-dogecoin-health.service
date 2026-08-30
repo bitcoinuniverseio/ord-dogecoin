@@ -1,0 +1,23 @@
+[Unit]
+Description=Universe Dogecoin index stack health check
+After=network-online.target universe-dogecoin.service universe-ord-dogecoin.service universe-index-doge-tap.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/universe-doge-tap/doge-tap.env
+EnvironmentFile=-/etc/universe-dogecoin/health.env
+ExecStart=/usr/local/sbin/universe-dogecoin-health
+User=root
+Group=root
+StateDirectory=universe-dogecoin-health
+UMask=0027
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/universe-dogecoin /etc/universe-doge-tap /data/indexers-b /data/indexers-c
+ReadWritePaths=/var/lib/universe-dogecoin-health

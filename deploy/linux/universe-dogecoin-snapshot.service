@@ -1,0 +1,26 @@
+[Unit]
+Description=Create and upload a verified Dogecoin TAP snapshot
+After=network-online.target universe-index-doge-tap.service universe-dogecoin.service
+Wants=network-online.target
+RequiresMountsFor=/data/indexers-b/doge-tap /data/indexers-c
+ConditionPathIsDirectory=/data/indexers-c/dogecoin-snapshots
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/universe-doge-tap/doge-tap.env
+EnvironmentFile=-/etc/universe-dogecoin/snapshot.env
+Environment=RCLONE_CONFIG=/etc/universe-backup/rclone.conf
+ExecStart=/usr/local/sbin/universe-dogecoin-snapshot
+User=root
+Group=root
+Nice=19
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
+TimeoutStartSec=infinity
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/universe-dogecoin /etc/universe-doge-tap /etc/universe-backup /data/indexers-b/doge-tap /opt/universe-index-doge-tap
+ReadWritePaths=/data/indexers-c/dogecoin-snapshots
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX

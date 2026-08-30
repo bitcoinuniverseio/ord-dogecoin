@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the Universe Dogecoin index stack every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Persistent=true
+Unit=universe-dogecoin-health.service
+
+[Install]
+WantedBy=timers.target
