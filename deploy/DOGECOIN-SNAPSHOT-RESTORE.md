@@ -46,6 +46,10 @@ The health result is written atomically to
 to `history.jsonl`. A non-zero health unit exit is an alert signal and the exact
 failure list is recorded in the JSON and journal.
 
+The primary index is reported as stalled only when both its published height and
+database modification time remain unchanged beyond `ORD_STALL_SECONDS`. This
+allows long redb transactions to finish without producing a false stall alert.
+
 ## Restore TAP on a fresh server
 
 1. Install the exact `index-doge-tap` commit from the selected manifest.

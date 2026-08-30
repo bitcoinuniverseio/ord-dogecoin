@@ -108,8 +108,10 @@ if [[ $node_height != null && $ord_height != null ]]; then
     fi
   fi
   advance_epoch=$(date -d "$last_ord_advance_at" +%s 2>/dev/null || echo "$now_epoch")
-  if (( lag > MAX_ORD_LAG_BLOCKS && now_epoch - advance_epoch > ORD_STALL_SECONDS )); then
-    problem ord_stalled "height=$ord_height last_advance=$last_ord_advance_at"
+  ord_db_mtime_epoch=$(stat -c %Y "$ORD_DB" 2>/dev/null || echo 0)
+  ord_db_idle_seconds=$((now_epoch - ord_db_mtime_epoch))
+  if (( lag > MAX_ORD_LAG_BLOCKS && now_epoch - advance_epoch > ORD_STALL_SECONDS && ord_db_idle_seconds > ORD_STALL_SECONDS )); then
+    problem ord_stalled "height=$ord_height last_advance=$last_ord_advance_at database_idle_seconds=$ord_db_idle_seconds"
   fi
 fi
 
