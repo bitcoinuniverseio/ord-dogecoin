@@ -211,6 +211,55 @@ pub struct FundingInventory {
   pub inputs: Vec<FundingInventoryItem>,
 }
 
+/// One etched dune, with every quantity as an exact atomic string.
+///
+/// A dune's supply arithmetic is u128, which no JSON number can carry, so
+/// every amount is a string of the exact digits, the same contract the
+/// DRC-20 inventory uses. `divisibility` is the dune's own shift and is the
+/// only rule by which an amount here may be scaled for display.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DuneTokenInventoryItem {
+  /// The spaced name, exactly as the protocol displays it.
+  pub dune: String,
+  /// The `block:index` identifier of the etching.
+  pub dune_id: String,
+  pub number: String,
+  pub symbol: Option<String>,
+  pub divisibility: u8,
+  pub etching_txid: String,
+  pub supply_atomic: String,
+  pub premine_atomic: String,
+  pub mints_atomic: String,
+  pub burned_atomic: String,
+  pub etched_height: String,
+  pub etched_timestamp: u64,
+  /// Whether the terms allow a mint in the next block, per the index.
+  pub mintable: bool,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DuneTokenInventory {
+  pub chain: &'static str,
+  /// False when this database was created without `--index-dunes`.
+  pub dune_index_enabled: bool,
+  pub block_count: u32,
+  pub block_hash: String,
+  pub inventory_complete: bool,
+  pub total_count: usize,
+  pub next_cursor: Option<String>,
+  pub tokens: Vec<DuneTokenInventoryItem>,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct DuneTokenDetail {
+  pub chain: &'static str,
+  pub dune_index_enabled: bool,
+  pub block_count: u32,
+  pub block_hash: String,
+  pub inventory_complete: bool,
+  pub token: DuneTokenInventoryItem,
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
