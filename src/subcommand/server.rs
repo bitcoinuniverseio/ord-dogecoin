@@ -12,7 +12,8 @@ use {
     authority_api::{
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
       Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory,
-      Drc20TokenInventoryItem, IndexCapabilities,
+      Drc20TokenInventoryItem, DuneTokenDetail, DuneTokenInventory, DuneTokenInventoryItem,
+      IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
       resolved_content_metadata,
@@ -290,6 +291,8 @@ const DRC20_INDEX_ABSENT: &str =
   "this index was created without --index-drc20 and cannot serve DRC-20 state; the flag is fixed at database creation and requires a rebuild";
 const TRANSACTION_INDEX_ABSENT: &str =
   "this index was created without --index-transactions and cannot serve funding proofs; the flag is fixed at database creation and requires a rebuild";
+const DUNE_INDEX_ABSENT: &str =
+  "this index was created without --index-dunes and cannot serve dune state; the flag is fixed at database creation and requires a rebuild";
 
 impl Server {
   pub(crate) fn run(self, options: Options, index: Arc<Index>, handle: Handle) -> SubcommandResult {
@@ -343,6 +346,11 @@ impl Server {
         .route(
           "/api/v1/drc20/tokens/:tick/holders",
           get(Self::drc20_holder_inventory),
+        )
+        .route("/api/v1/dunes/tokens", get(Self::dune_token_inventory))
+        .route(
+          "/api/v1/dunes/tokens/:dune",
+          get(Self::dune_token_detail),
         )
         .route("/api/v1/funding/:address", get(Self::funding_inventory))
         .route("/inscriptions", get(Self::inscriptions))
@@ -2981,6 +2989,118 @@ impl Server {
           None
         },
         holders,
+      })
+      .into_response(),
+    )
+  }
+
+  fn dune_token_item(
+    id: DuneId,
+    entry: &DuneEntry,
+    next_block_height: u64,
+  ) -> DuneTokenInventoryItem {
+    DuneTokenInventoryItem {
+      dune: entry.spaced_dune().to_string(),
+      dune_id: id.to_string(),
+      number: entry.number.to_string(),
+      symbol: entry.symbol.map(|symbol| symbol.to_string()),
+      divisibility: entry.divisibility,
+      etching_txid: entry.etching.to_string(),
+      supply_atomic: entry.supply.to_string(),
+      premine_atomic: entry.premine.to_string(),
+      mints_atomic: entry.mints.to_string(),
+      burned_atomic: entry.burned.to_string(),
+      etched_height: entry.block.to_string(),
+      etched_timestamp: entry.timestamp,
+      mintable: entry.mintable(next_block_height.into()).is_ok(),
+    }
+  }
+
+  /// Paged dune catalog with indexed protocol state.
+  ///
+  /// Serves the same contract discipline as the DRC-20 catalog: fail closed
+  /// when this database never indexed dunes, because `200 []` from such an
+  /// index reads downstream as "this chain has no dunes"; every u128 amount
+  /// as an exact string; a deterministic etching order so an offset cursor
+  /// never repeats or skips an entry.
+  async fn dune_token_inventory(
+    Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20InventoryQuery>,
+  ) -> ServerResult<Response> {
+    let limit = checked_inventory_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let offset = checked_offset_cursor(query.cursor.as_deref())
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    if !index.has_dune_index() {
+      return Err(ServerError::BadRequest(DUNE_INDEX_ABSENT.to_string()));
+    }
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let next_block_height = u64::from(index.height()?.unwrap_or(Height(0)).n()) + 1;
+
+    let mut catalog = index.dunes()?;
+    catalog.sort_by_key(|(id, _)| *id);
+    let total_count = catalog.len();
+
+    let tokens = catalog
+      .iter()
+      .skip(offset)
+      .take(limit)
+      .map(|(id, entry)| Self::dune_token_item(*id, entry, next_block_height))
+      .collect::<Vec<DuneTokenInventoryItem>>();
+
+    let next = offset.saturating_add(tokens.len());
+    Ok(
+      Json(DuneTokenInventory {
+        chain: "dogecoin",
+        dune_index_enabled: true,
+        block_count,
+        block_hash: block_hash.to_string(),
+        inventory_complete: true,
+        total_count,
+        next_cursor: if next < total_count {
+          Some(next.to_string())
+        } else {
+          None
+        },
+        tokens,
+      })
+      .into_response(),
+    )
+  }
+
+  async fn dune_token_detail(
+    Extension(index): Extension<Arc<Index>>,
+    Path(DeserializeFromStr(dune_query)): Path<DeserializeFromStr<query::Dune>>,
+  ) -> ServerResult<Response> {
+    if !index.has_dune_index() {
+      return Err(ServerError::BadRequest(DUNE_INDEX_ABSENT.to_string()));
+    }
+    let dune = match dune_query {
+      query::Dune::SpacedDune(spaced_dune) => spaced_dune.dune,
+      query::Dune::DuneId(dune_id) => index
+        .get_dune_by_id(dune_id)?
+        .ok_or_not_found(|| format!("dune {dune_id}"))?,
+    };
+    let (id, entry) = index
+      .dune(dune)?
+      .ok_or_not_found(|| format!("dune {dune}"))?;
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+    let next_block_height = u64::from(index.height()?.unwrap_or(Height(0)).n()) + 1;
+
+    Ok(
+      Json(DuneTokenDetail {
+        chain: "dogecoin",
+        dune_index_enabled: true,
+        block_count,
+        block_hash: block_hash.to_string(),
+        inventory_complete: true,
+        token: Self::dune_token_item(id, &entry, next_block_height),
       })
       .into_response(),
     )

@@ -1,7 +1,8 @@
 use ord::authority_api::{
   checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20HolderInventory,
   Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem,
-  Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
+  Drc20TransferableInventory, Drc20TransferableInventoryItem, DuneTokenDetail,
+  DuneTokenInventory, DuneTokenInventoryItem, FundingInventory,
   FundingInventoryItem, IndexCapabilities, InscriptionInventory, InscriptionInventoryItem,
   InventoryLocation,
 };
@@ -308,4 +309,95 @@ fn serializes_one_drc20_definition_with_the_same_exact_contract() {
     encoded["token"]["remaining_atomic"],
     json!((u128::MAX - 200_000_000).to_string())
   );
+}
+
+#[test]
+fn serializes_dune_amounts_as_exact_u128_strings() {
+  let inventory = DuneTokenInventory {
+    chain: "dogecoin",
+    dune_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    inventory_complete: true,
+    total_count: 1,
+    next_cursor: Some("1".to_string()),
+    tokens: vec![DuneTokenInventoryItem {
+      dune: "SUCH•WOW•DUNE".to_string(),
+      dune_id: "5084000:1".to_string(),
+      number: u64::MAX.to_string(),
+      symbol: Some("D".to_string()),
+      divisibility: 8,
+      etching_txid: "cd".repeat(32),
+      supply_atomic: u128::MAX.to_string(),
+      premine_atomic: "1000000000".to_string(),
+      mints_atomic: "21000".to_string(),
+      burned_atomic: "0".to_string(),
+      etched_height: "5084000".to_string(),
+      etched_timestamp: 1_700_000_000,
+      mintable: true,
+    }],
+  };
+
+  let encoded = serde_json::to_value(inventory).unwrap();
+  // u128::MAX has no JSON number; only the exact string survives the trip.
+  assert_eq!(
+    encoded["tokens"][0]["supply_atomic"],
+    json!(u128::MAX.to_string())
+  );
+  assert_eq!(encoded["tokens"][0]["divisibility"], json!(8));
+  assert_eq!(encoded["dune_index_enabled"], true);
+  assert_eq!(encoded["next_cursor"], json!("1"));
+}
+
+#[test]
+fn dune_payloads_state_that_the_index_can_answer_dunes() {
+  // An empty catalog is only meaningful alongside this flag: the endpoint
+  // fails closed when the database never indexed dunes, so a served empty
+  // list is a true "none etched yet" rather than an unanswerable question.
+  let inventory = DuneTokenInventory {
+    chain: "dogecoin",
+    dune_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    inventory_complete: true,
+    total_count: 0,
+    next_cursor: None,
+    tokens: vec![],
+  };
+
+  let encoded = serde_json::to_value(inventory).unwrap();
+  assert_eq!(encoded["dune_index_enabled"], true);
+  assert_eq!(encoded["total_count"], json!(0));
+  assert_eq!(encoded["tokens"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn serializes_one_dune_definition_with_a_symbol_free_of_invention() {
+  let detail = DuneTokenDetail {
+    chain: "dogecoin",
+    dune_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "ab".repeat(32),
+    inventory_complete: true,
+    token: DuneTokenInventoryItem {
+      dune: "BARE•DUNE".to_string(),
+      dune_id: "5084001:0".to_string(),
+      number: "2".to_string(),
+      symbol: None,
+      divisibility: 0,
+      etching_txid: "ef".repeat(32),
+      supply_atomic: "0".to_string(),
+      premine_atomic: "0".to_string(),
+      mints_atomic: "0".to_string(),
+      burned_atomic: "0".to_string(),
+      etched_height: "5084001".to_string(),
+      etched_timestamp: 1_700_000_001,
+      mintable: false,
+    },
+  };
+
+  let encoded = serde_json::to_value(detail).unwrap();
+  // A dune with no symbol reports null, never a placeholder glyph.
+  assert_eq!(encoded["token"]["symbol"], serde_json::Value::Null);
+  assert_eq!(encoded["token"]["mintable"], false);
 }
