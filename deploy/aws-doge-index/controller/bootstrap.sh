@@ -196,6 +196,20 @@ mv -f "$temporary" "$latest"
 HEALTH
 chmod 0755 /usr/local/sbin/doge-index-health
 
+# Replacement Spot instances are deliberately not one fixed size, so the indexer
+# tuning is recomputed from the hardware this boot actually has. Operator values
+# in indexer.env are read afterwards and win.
+total_kb=$(awk '/MemTotal:/ {print $2}' /proc/meminfo)
+cache_bytes=$(( total_kb * 1024 / 2 ))
+(( cache_bytes > 68719476736 )) && cache_bytes=68719476736
+(( cache_bytes < 4294967296 )) && cache_bytes=4294967296
+parallel=$(( $(nproc) * 2 ))
+(( parallel > 32 )) && parallel=32
+(( parallel < 4 )) && parallel=4
+printf 'DB_CACHE_SIZE=%s\nRPC_PARALLEL_REQUESTS=%s\n' "$cache_bytes" "$parallel" \
+  >"$MOUNT_POINT/control/indexer.env.auto"
+chmod 0640 "$MOUNT_POINT/control/indexer.env.auto"
+
 cat >/etc/systemd/system/doge-ord-indexer.service <<'UNIT'
 [Unit]
 Description=Universe Dogecoin Ord catch-up on persistent EBS
@@ -212,6 +226,7 @@ WorkingDirectory=/mnt/doge-index/runtime
 Environment=RUST_LOG=info
 Environment=SUBSIDIES_PATH=/mnt/doge-index/runtime/subsidies.json
 Environment=STARTING_SATS_PATH=/mnt/doge-index/runtime/starting_sats.json
+EnvironmentFile=-/mnt/doge-index/control/indexer.env.auto
 EnvironmentFile=-/mnt/doge-index/control/indexer.env
 ExecStartPre=/usr/local/sbin/doge-index-start-guard
 ExecStart=/mnt/doge-index/runtime/ord --rpc-url=http://127.0.0.1:22566 --cookie-file=/mnt/doge-index/secrets/ord-rpc.cookie --index=/mnt/doge-index/data/doginals.redb --first-inscription-height=4609723 --db-cache-size=${DB_CACHE_SIZE} --nr-parallel-requests=${RPC_PARALLEL_REQUESTS} server --http --address=127.0.0.1 --http-port=8390
