@@ -4,7 +4,7 @@ set -euo pipefail
 DATASET=tap
 SOURCE_DB=${SOURCE_DB:-/data/indexers-b/doge-tap/live/index-doge-tap.sqlite}
 SNAPSHOT_ROOT=${SNAPSHOT_ROOT:-/data/indexers-c/dogecoin-snapshots}
-REMOTE_ROOT=${REMOTE_ROOT:-universe-b2-indexers:universe-indexer-backups-hot/dogecoin}
+REMOTE_ROOT=${REMOTE_ROOT:-indexer-b2:universe-indexer-backups-hot/dogecoin}
 BACKUP_HELPER=${BACKUP_HELPER:-/usr/local/libexec/universe/sqlite-online-backup.py}
 DOGECOIN_CLI=${DOGECOIN_CLI:-/opt/universe-dogecoin/dogecoin-1.14.9/bin/dogecoin-cli}
 DOGECOIN_DATADIR=${DOGECOIN_DATADIR:-/data/indexers-b/dogecoin}
