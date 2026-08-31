@@ -33,6 +33,14 @@ install -m 0644 deploy/linux/universe-dogecoin-health.timer /etc/systemd/system/
 install -m 0644 deploy/linux/universe-dogecoin-snapshot.service /etc/systemd/system/
 install -m 0644 deploy/linux/universe-dogecoin-snapshot.timer /etc/systemd/system/
 install -m 0644 deploy/linux/universe-ord-dogecoin-full.service /etc/systemd/system/
+install -d -m 0755 /etc/systemd/system/universe-ord-dogecoin.service.d
+install -d -m 0755 /etc/systemd/system/universe-ord-dogecoin-full.service.d
+install -m 0644 \
+  deploy/linux/universe-ord-dogecoin.service.d/zz-universe-indexing-performance.conf \
+  /etc/systemd/system/universe-ord-dogecoin.service.d/
+install -m 0644 \
+  deploy/linux/universe-ord-dogecoin-full.service.d/zz-universe-indexing-performance.conf \
+  /etc/systemd/system/universe-ord-dogecoin-full.service.d/
 systemctl daemon-reload
 systemctl enable --now universe-dogecoin-health.timer
 systemctl enable --now universe-dogecoin-snapshot.timer
@@ -42,6 +50,32 @@ systemctl enable universe-ord-dogecoin-full.service
 Enabling the full-index unit makes it survive a reboot but does not start it.
 Start it only after confirming its separate database path is unused, its volume
 has adequate headroom, and the primary ord-dogecoin service is still healthy.
+
+The `zz-universe-indexing-performance.conf` drop-ins sort after older local
+overrides and prevent sustained memory and I/O pressure from reducing catch-up
+to an impractical rate. They preserve each unit's existing `MemoryMax` hard
+limit. Installing the files and running `daemon-reload` does not interrupt an
+active indexer. Apply the resource controls to an already-running catch-up
+without a restart:
+
+```bash
+systemctl set-property --runtime universe-ord-dogecoin.service \
+  MemoryHigh=7G CPUWeight=500 IOWeight=500
+systemctl set-property --runtime universe-ord-dogecoin-full.service \
+  MemoryHigh=10G CPUWeight=500 IOWeight=500
+
+for unit in universe-ord-dogecoin.service universe-ord-dogecoin-full.service; do
+  pid=$(systemctl show --property MainPID --value "$unit")
+  test "$pid" -gt 0
+  renice -n 0 -p "$pid"
+  ionice -c 2 -n 2 -p "$pid"
+done
+```
+
+Confirm `ActiveState=active`, unchanged `MainPID` values, advancing database
+modification times or heights, and falling memory/I/O pressure after the live
+change. The persisted scheduling properties take effect naturally on the next
+service start; do not restart an indexer solely to apply them.
 
 The health result is written atomically to
 `/var/lib/universe-dogecoin-health/status.json`. Historical samples are appended
