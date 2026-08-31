@@ -48,7 +48,7 @@ manifest="$destination/manifest.json"
 sums="$destination/SHA256SUMS"
 
 [[ ! -e $raw && ! -e $archive ]] || { log "snapshot already exists for $stamp"; exit 1; }
-trap 'rm -f "$raw" "$archive.partial"' EXIT
+trap 'rm -f "$raw" "$raw-journal" "$archive.partial"' EXIT
 
 log "creating a transactionally consistent SQLite backup"
 "$BACKUP_HELPER" "$SOURCE_DB" "$raw"
