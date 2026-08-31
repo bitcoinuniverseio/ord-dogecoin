@@ -11,7 +11,9 @@ production.
 - Never stop or restart an ord-dogecoin process that is indexing, repairing,
   or committing valid work.
 - SQLite snapshots are created with SQLite's online backup API and verified
-  with `PRAGMA quick_check` before compression.
+  with `PRAGMA quick_check` before compression. The backup copies one WAL
+  snapshot in a single source read transaction so a hot writer cannot
+  repeatedly invalidate page batches and starve the snapshot.
 - Uploads use the B2 SHA-1 object hash for transport verification and also
   publish the required SHA-256 digest in `SHA256SUMS` and `manifest.json`.
 - `latest.json` is updated only after the remote object hash matches.

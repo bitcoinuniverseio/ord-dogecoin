@@ -19,7 +19,11 @@ def main() -> int:
     source_uri = f"file:{source.as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True, timeout=60) as source_db:
         with sqlite3.connect(destination, timeout=60) as destination_db:
-            source_db.backup(destination_db, pages=4096, sleep=0.05)
+            # Copy one WAL snapshot in a single backup step. Releasing the
+            # source read transaction between page batches lets a hot writer
+            # repeatedly invalidate already-copied pages and can starve the
+            # backup indefinitely.
+            source_db.backup(destination_db, pages=-1)
             result = destination_db.execute("PRAGMA quick_check").fetchone()
             if result != ("ok",):
                 print(f"backup verification failed: {result!r}", file=sys.stderr)
