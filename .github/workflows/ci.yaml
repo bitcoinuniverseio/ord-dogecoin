@@ -33,6 +33,20 @@ jobs:
         run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --all-features
       - name: Check for forbidden words
         run: ./bin/forbid
+      - name: Validate AWS Dogecoin migration controls
+        run: |
+          bash -n deploy/aws-doge-index/migrate-source.sh
+          bash -n deploy/aws-doge-index/cutover-source.sh
+          bash -n deploy/aws-doge-index/validate-index.sh
+          bash -n deploy/aws-doge-index/controller/bootstrap.sh
+          awk '/doge-index-run <<.RUNNER./{capture=1;next} /^RUNNER$/{capture=0} capture' \
+            deploy/aws-doge-index/controller/bootstrap.sh | bash -n
+          awk '/doge-index-activate <<.ACTIVATE./{capture=1;next} /^ACTIVATE$/{capture=0} capture' \
+            deploy/aws-doge-index/controller/bootstrap.sh | bash -n
+          grep -Fq '[[ "$height_limit" == "$expected_limit" ]]' \
+            deploy/aws-doge-index/controller/bootstrap.sh
+          grep -Fq 'ExecStart=/usr/local/sbin/doge-index-run' \
+            deploy/aws-doge-index/controller/bootstrap.sh
 
   test-linux:
     runs-on: runs-on=${{ github.run_id }}-test_linux/runner=universe-hosted/cpu=2+8/env=production
