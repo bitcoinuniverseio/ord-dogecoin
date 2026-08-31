@@ -1,0 +1,11 @@
+[Unit]
+Description=Create a verified Dogecoin TAP snapshot daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+Unit=universe-dogecoin-snapshot.service
+
+[Install]
+WantedBy=timers.target
