@@ -122,6 +122,15 @@ if ! id universe-ord-dogecoin >/dev/null 2>&1; then
     --shell /usr/sbin/nologin universe-ord-dogecoin
 fi
 
+chown root:universe-ord-dogecoin "$MOUNT_POINT/control"
+chmod 0750 "$MOUNT_POINT/control"
+for control_file in migration-manifest.json START_INDEXER HEIGHT_LIMIT source-checkpoint.ok; do
+  if [[ -e "$MOUNT_POINT/control/$control_file" ]]; then
+    chown root:universe-ord-dogecoin "$MOUNT_POINT/control/$control_file"
+    chmod 0640 "$MOUNT_POINT/control/$control_file"
+  fi
+done
+
 if [[ -s "$MOUNT_POINT/control/ssh/authorized_keys" ]] && id ubuntu >/dev/null 2>&1; then
   install -d -o ubuntu -g ubuntu -m 0700 /home/ubuntu/.ssh
   install -o ubuntu -g ubuntu -m 0600 \
@@ -156,8 +165,103 @@ expected_binary=$(jq -er '.source.binarySha256' /mnt/doge-index/control/migratio
 [[ "$(sha256sum /mnt/doge-index/runtime/ord | awk '{print $1}')" == "$expected_binary" ]]
 owner=$(stat -c '%U:%G' /mnt/doge-index/data/doginals.redb)
 [[ "$owner" == "universe-ord-dogecoin:universe-ord-dogecoin" ]]
+if [[ -e /mnt/doge-index/control/HEIGHT_LIMIT ]]; then
+  height_limit=$(tr -d '[:space:]' </mnt/doge-index/control/HEIGHT_LIMIT)
+  [[ "$height_limit" =~ ^[1-9][0-9]*$ ]]
+  expected_limit=$(jq -er '.source.blockCount' /mnt/doge-index/control/migration-manifest.json)
+  [[ "$height_limit" == "$expected_limit" ]]
+fi
 GUARD
 chmod 0755 /usr/local/sbin/doge-index-start-guard
+
+cat >/usr/local/sbin/doge-index-run <<'RUNNER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+root=/mnt/doge-index
+args=(
+  "--rpc-url=http://127.0.0.1:22566"
+  "--cookie-file=$root/secrets/ord-rpc.cookie"
+  "--index=$root/data/doginals.redb"
+  "--first-inscription-height=4609723"
+  "--db-cache-size=${DB_CACHE_SIZE}"
+  "--nr-parallel-requests=${RPC_PARALLEL_REQUESTS}"
+)
+if [[ -e "$root/control/HEIGHT_LIMIT" ]]; then
+  height_limit=$(tr -d '[:space:]' <"$root/control/HEIGHT_LIMIT")
+  [[ "$height_limit" =~ ^[1-9][0-9]*$ ]]
+  args+=("--height-limit=$height_limit")
+fi
+exec "$root/runtime/ord" "${args[@]}" server --http --address=127.0.0.1 --http-port=8390
+RUNNER
+chmod 0755 /usr/local/sbin/doge-index-run
+
+cat >/usr/local/sbin/doge-index-activate <<'ACTIVATE'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+root=/mnt/doge-index
+manifest=$root/control/migration-manifest.json
+height_limit=$root/control/HEIGHT_LIMIT
+start_marker=$root/control/START_INDEXER
+evidence=$root/control/source-checkpoint.ok
+service=doge-ord-indexer.service
+
+install_control_value() {
+  local value=$1
+  local destination=$2
+  local temporary="$destination.$$"
+  printf '%s\n' "$value" >"$temporary"
+  chown root:universe-ord-dogecoin "$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$destination"
+}
+
+case "${1:-}" in
+  verify-source)
+    test -s "$manifest"
+    expected_count=$(jq -er '.source.blockCount' "$manifest")
+    expected_hash=$(jq -er '.source.blockHash' "$manifest")
+    install_control_value "$expected_count" "$height_limit"
+    install_control_value ready "$start_marker"
+    rm -f "$evidence"
+    cleanup() { systemctl stop "$service" >/dev/null 2>&1 || true; }
+    trap cleanup EXIT
+    systemctl start "$service"
+    observed=""
+    for _ in $(seq 1 180); do
+      observed=$(curl -fsS --max-time 10 http://127.0.0.1:8390/api/v1/capabilities 2>/dev/null || true)
+      if jq -e '.block_count > 0 and (.block_hash | length) > 0' <<<"$observed" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
+    observed_count=$(jq -er '.block_count' <<<"$observed")
+    observed_hash=$(jq -er '.block_hash' <<<"$observed")
+    [[ "$observed_count" == "$expected_count" ]]
+    [[ "$observed_hash" == "$expected_hash" ]]
+    systemctl stop "$service"
+    jq -cn --arg at "$(date -u +%FT%TZ)" --argjson blockCount "$observed_count" \
+      --arg blockHash "$observed_hash" '{verifiedAt:$at,blockCount:$blockCount,blockHash:$blockHash}' \
+      >"$evidence.$$"
+    chown root:universe-ord-dogecoin "$evidence.$$"
+    chmod 0640 "$evidence.$$"
+    mv -f "$evidence.$$" "$evidence"
+    rm -f "$height_limit"
+    trap - EXIT
+    echo "Migrated source checkpoint verified: block_count=$observed_count block_hash=$observed_hash"
+    ;;
+  start-catchup)
+    test -s "$evidence"
+    test ! -e "$height_limit"
+    test -s "$start_marker"
+    systemctl enable --now "$service"
+    ;;
+  *)
+    echo "Usage: $0 verify-source|start-catchup" >&2
+    exit 2
+    ;;
+esac
+ACTIVATE
+chmod 0755 /usr/local/sbin/doge-index-activate
 
 cat >/usr/local/sbin/doge-index-health <<'HEALTH'
 #!/usr/bin/env bash
@@ -229,7 +333,7 @@ Environment=STARTING_SATS_PATH=/mnt/doge-index/runtime/starting_sats.json
 EnvironmentFile=-/mnt/doge-index/control/indexer.env.auto
 EnvironmentFile=-/mnt/doge-index/control/indexer.env
 ExecStartPre=/usr/local/sbin/doge-index-start-guard
-ExecStart=/mnt/doge-index/runtime/ord --rpc-url=http://127.0.0.1:22566 --cookie-file=/mnt/doge-index/secrets/ord-rpc.cookie --index=/mnt/doge-index/data/doginals.redb --first-inscription-height=4609723 --db-cache-size=${DB_CACHE_SIZE} --nr-parallel-requests=${RPC_PARALLEL_REQUESTS} server --http --address=127.0.0.1 --http-port=8390
+ExecStart=/usr/local/sbin/doge-index-run
 Restart=on-failure
 RestartSec=15
 KillSignal=SIGINT
