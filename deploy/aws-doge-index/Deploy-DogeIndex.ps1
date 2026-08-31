@@ -8,7 +8,7 @@ param(
     [Parameter(Mandatory)] [string] $AmiId,
     [string] $SourceCidr = '159.195.109.76/32',
     [string] $OperatorCidr = '65.108.197.168/32',
-    [string] $CandidateTypes = 'm8i.8xlarge,m8a.8xlarge,c8i.8xlarge,c8a.8xlarge,m7i.8xlarge,m7a.8xlarge,c7i.8xlarge,c7a.8xlarge',
+    [string] $CandidateTypes = 'm7i.16xlarge,m7a.16xlarge,c7i.16xlarge,m8i.8xlarge,m7i.8xlarge,m7a.8xlarge,c7i.8xlarge,c7a.8xlarge,r7i.8xlarge,m8i.4xlarge,m7i.4xlarge,m7a.4xlarge,r7i.4xlarge,m8i.2xlarge,m7i.2xlarge,r7i.2xlarge',
     [ValidateSet('true', 'false')] [string] $LaunchEnabled = 'false',
     [ValidateSet('ENABLED', 'DISABLED')] [string] $ControllerScheduleState = 'DISABLED',
     [string] $StackName = 'universe-doge-index-spot'
