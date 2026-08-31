@@ -105,8 +105,13 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
    It performs steps 7 to 9 as one resumable unit and refuses to start while the
    preseed is still running. Each stage leaves a marker under
    `/var/lib/universe-doge-cutover`, so an interrupted run resumes rather than
-   re-copying the database. Prefer `systemctl start universe-doge-ebs-cutover`
-   so the work survives an SSH disconnect.
+   re-copying the database. Install the versioned
+   `source/universe-doge-ebs-cutover.service`, reload systemd, and start it with
+   `systemctl start --no-block universe-doge-ebs-cutover`. The detached start is
+   required: interrupting a blocking `systemctl start` client can cancel the
+   active oneshot and send it SIGTERM. Follow progress with `systemctl show` and
+   `journalctl -u universe-doge-ebs-cutover` instead of holding the start client
+   open.
 8. It gracefully stops only the primary Ord Dogecoin writer, waits for shutdown,
    proves no open database handle remains, and leaves Dogecoin Core and the
    other indexes running. It records the source checkpoint and block hash first,
