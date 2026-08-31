@@ -16,6 +16,14 @@ SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyCh
 RSYNC_SSH="ssh -i $SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 
 install -d -m 0750 "$STATE"
+
+# A second operator or agent must never run this concurrently: two final copies
+# writing the same destination file would corrupt the database.
+exec 9>/var/lock/universe-doge-cutover.lock
+if ! flock -n 9; then
+  echo "Another cutover run holds the lock. Refusing to run concurrently." >&2
+  exit 1
+fi
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 
 # 1. The preseed must have finished. A running rsync means the delta is not final.
