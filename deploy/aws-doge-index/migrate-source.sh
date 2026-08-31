@@ -8,6 +8,14 @@ RPC_COOKIE=${RPC_COOKIE:-/etc/universe-dogecoin/ord-rpc.cookie}
 DESTINATION=${DESTINATION:?set DESTINATION to the restricted EC2 SSH target}
 SSH_KEY=${SSH_KEY:?set SSH_KEY to the dedicated migration key}
 MODE=${1:-hot-copy}
+
+# Serialise everything that writes the destination database. Distinct from the
+# cutover lock so the cutover calling final-copy cannot deadlock against itself.
+exec 8>/var/lock/universe-doge-ebs-destination.lock
+if ! flock -n 8; then
+  echo "Another transfer already holds the destination lock." >&2
+  exit 1
+fi
 REMOTE_ROOT=/mnt/doge-index
 SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
 RSYNC_SSH="ssh -i $SSH_KEY -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"

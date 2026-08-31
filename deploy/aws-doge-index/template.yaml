@@ -178,6 +178,7 @@ Resources:
                   - ec2:AssociateAddress
                   - ec2:AttachVolume
                   - ec2:CreateFleet
+                  - ec2:RunInstances
                   - ec2:CreateLaunchTemplateVersion
                   - ec2:CreateTags
                   - ec2:DescribeAddresses
