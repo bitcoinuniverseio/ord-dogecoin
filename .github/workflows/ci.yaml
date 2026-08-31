@@ -47,6 +47,12 @@ jobs:
             deploy/aws-doge-index/controller/bootstrap.sh
           grep -Fq 'ExecStart=/usr/local/sbin/doge-index-run' \
             deploy/aws-doge-index/controller/bootstrap.sh
+          grep -Fq 'Type=oneshot' \
+            deploy/aws-doge-index/source/universe-doge-ebs-cutover.service
+          grep -Fq 'TimeoutStartSec=infinity' \
+            deploy/aws-doge-index/source/universe-doge-ebs-cutover.service
+          grep -Fq 'systemctl start --no-block universe-doge-ebs-cutover' \
+            deploy/aws-doge-index/README.md
 
   test-linux:
     runs-on: runs-on=${{ github.run_id }}-test_linux/runner=universe-hosted/cpu=2+8/env=production
