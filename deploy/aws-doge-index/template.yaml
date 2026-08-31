@@ -1,0 +1,315 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Spot-only disposable compute controller for one retained Dogecoin index EBS volume
+
+Parameters:
+  VolumeId:
+    Type: String
+    AllowedPattern: '^vol-[0-9a-f]+$'
+  AvailabilityZone:
+    Type: AWS::EC2::AvailabilityZone::Name
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  AmiId:
+    Type: AWS::EC2::Image::Id
+  SourceCidr:
+    Type: String
+    Default: 159.195.109.76/32
+  OperatorCidr:
+    Type: String
+    Default: 65.108.197.168/32
+  CandidateTypes:
+    Type: String
+    Default: m8i.8xlarge,m8a.8xlarge,c8i.8xlarge,c8a.8xlarge,m7i.8xlarge,m7a.8xlarge,c7i.8xlarge,c7a.8xlarge
+  LaunchEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  ControllerScheduleState:
+    Type: String
+    AllowedValues: [ENABLED, DISABLED]
+    Default: DISABLED
+
+Resources:
+  ComputeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Restricted SSH ingress for Doge index migration and operations
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SourceCidr
+          Description: Universe Indexers migration and RPC tunnel
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref OperatorCidr
+          Description: Universe operator access
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: doge-index-spot-restricted
+        - Key: Project
+          Value: doge-index-catchup
+
+  ComputeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: universe-doge-index-spot-compute
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: DogeIndexMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: Universe/DogeIndex
+      Tags:
+        - Key: Project
+          Value: doge-index-catchup
+
+  ComputeProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: universe-doge-index-spot-compute
+      Roles:
+        - !Ref ComputeRole
+
+  PersistentAddress:
+    Type: AWS::EC2::EIP
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: doge-index-spot-stable-address
+        - Key: Project
+          Value: doge-index-catchup
+        - Key: Persistence
+          Value: retain
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: universe-doge-index-spot
+      LaunchTemplateData:
+        ImageId: !Ref AmiId
+        IamInstanceProfile:
+          Arn: !GetAtt ComputeProfile.Arn
+        SecurityGroupIds:
+          - !Ref ComputeSecurityGroup
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        Monitoring:
+          Enabled: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              DeleteOnTermination: true
+              Encrypted: true
+              VolumeSize: 32
+              VolumeType: gp3
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: doge-index-spot-compute
+              - Key: Project
+                Value: doge-index-catchup
+              - Key: Capacity
+                Value: spot-only
+              - Key: PersistentVolumeId
+                Value: !Ref VolumeId
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: doge-index-spot-root-disposable
+              - Key: Project
+                Value: doge-index-catchup
+              - Key: Persistence
+                Value: disposable
+        UserData:
+          Fn::Base64: |
+            #!/usr/bin/env bash
+            set -Eeuo pipefail
+            echo 'Controller package bootstrap was not injected' >&2
+            exit 1
+
+  ControllerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: universe-doge-index-spot-controller
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SpotOnlyReconciliation
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:AssociateAddress
+                  - ec2:AttachVolume
+                  - ec2:CreateFleet
+                  - ec2:CreateLaunchTemplateVersion
+                  - ec2:CreateTags
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeFleets
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceTypeOfferings
+                  - ec2:DescribeLaunchTemplates
+                  - ec2:DescribeLaunchTemplateVersions
+                  - ec2:DescribeVolumes
+                  - ec2:ModifyInstanceAttribute
+                  - ec2:ModifyLaunchTemplate
+                  - iam:PassRole
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:DeleteItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt ControllerLockTable.Arn
+      Tags:
+        - Key: Project
+          Value: doge-index-catchup
+
+  ControllerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: universe-doge-index-spot-controller
+      Runtime: python3.13
+      Handler: controller.handler
+      Role: !GetAtt ControllerRole.Arn
+      Timeout: 120
+      Code: controller/
+      Environment:
+        Variables:
+          REGION: !Ref AWS::Region
+          AVAILABILITY_ZONE: !Ref AvailabilityZone
+          SUBNET_ID: !Ref SubnetId
+          VOLUME_ID: !Ref VolumeId
+          EIP_ALLOCATION_ID: !GetAtt PersistentAddress.AllocationId
+          LAUNCH_TEMPLATE_ID: !Ref LaunchTemplate
+          CANDIDATE_TYPES: !Ref CandidateTypes
+          PROJECT_TAG: doge-index-catchup
+          LAUNCH_ENABLED: !Ref LaunchEnabled
+          LOCK_TABLE: !Ref ControllerLockTable
+      Tags:
+        - Key: Project
+          Value: doge-index-catchup
+
+  ControllerLockTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: universe-doge-index-controller-lock
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: lockKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: lockKey
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: doge-index-catchup
+
+  ReconcileSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: universe-doge-index-spot-reconcile
+      Description: Reattach the retained EBS volume to replacement Spot compute in the fixed AZ
+      ScheduleExpression: rate(1 minute)
+      State: !Ref ControllerScheduleState
+      Targets:
+        - Arn: !GetAtt ControllerFunction.Arn
+          Id: DogeSpotController
+
+  InstanceStateRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: universe-doge-index-instance-state
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance State-change Notification
+        detail:
+          state:
+            - running
+            - stopping
+            - stopped
+            - shutting-down
+            - terminated
+      State: !Ref ControllerScheduleState
+      Targets:
+        - Arn: !GetAtt ControllerFunction.Arn
+          Id: DogeSpotController
+
+  SchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ControllerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ReconcileSchedule.Arn
+
+  StatePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ControllerFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt InstanceStateRule.Arn
+
+  VolumeIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /universe/doge-index/persistent-volume-id
+      Type: String
+      Value: !Ref VolumeId
+      Description: Retained Dogecoin index EBS volume. Never replace automatically.
+      Tags:
+        Project: doge-index-catchup
+        Persistence: retain
+
+Outputs:
+  PublicIp:
+    Value: !Ref PersistentAddress
+  AllocationId:
+    Value: !GetAtt PersistentAddress.AllocationId
+  SecurityGroupId:
+    Value: !Ref ComputeSecurityGroup
+  LaunchTemplateId:
+    Value: !Ref LaunchTemplate
+  ControllerFunctionName:
+    Value: !Ref ControllerFunction

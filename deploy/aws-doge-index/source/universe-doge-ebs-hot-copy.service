@@ -1,0 +1,18 @@
+[Unit]
+Description=Resumable Dogecoin REDB hot preseed to retained AWS EBS
+Wants=network-online.target
+After=network-online.target universe-ord-dogecoin.service
+ConditionPathExists=/data/indexers-b/ord-dogecoin/doginals.redb
+ConditionPathExists=/root/.ssh/doge-ebs-migration-ed25519
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+Environment=DESTINATION=ubuntu@63.184.178.36
+Environment=SSH_KEY=/root/.ssh/doge-ebs-migration-ed25519
+ExecStart=/usr/local/sbin/universe-doge-ebs-migrate hot-copy
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target
