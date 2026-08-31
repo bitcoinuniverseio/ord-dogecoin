@@ -115,9 +115,15 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
    SHA-256, and writes `control/migration-manifest.json`. The source stays intact
    as the rollback copy but is disabled, so a reboot cannot silently resume a
    writer that would diverge from the migrated database.
-10. Start the migrated binary with a temporary height limit equal to the source
-    checkpoint. Require the same capability height and block hash. Stop it.
-11. Create `control/START_INDEXER`, remove the height limit, and start catch-up.
+10. Run `sudo /usr/local/sbin/doge-index-activate verify-source` on the AWS host.
+    It writes an exact `HEIGHT_LIMIT` from the migration manifest, starts the
+    migrated binary, requires the same capability block count and block hash,
+    stops it, records `control/source-checkpoint.ok`, and only then removes the
+    limit. A failed verification leaves the limit in place and the service
+    stopped.
+11. Run `sudo /usr/local/sbin/doge-index-activate start-catchup`. It refuses to
+    start without the checkpoint evidence, `START_INDEXER`, or with a remaining
+    height limit.
     Abort immediately if the observed checkpoint is zero or behind the manifest.
 12. Enable the controller and both EventBridge rules. Test one controlled Spot
     replacement before relying on unattended recovery.
