@@ -185,6 +185,15 @@ def launch_spot_instance():
     if errors:
         LOG.warning("Spot capacity request returned errors: %s", json.dumps(errors, default=str))
     if not instances:
+        # Distinguish a real capacity shortage, which is expected and self heals,
+        # from a misconfiguration, which never will. Reporting both as "no
+        # capacity" hides a broken recovery path until an interruption exposes it.
+        codes = {error.get("ErrorCode") for error in errors}
+        blocking = codes - {"InsufficientInstanceCapacity", "SpotMaxPriceTooLow"}
+        if blocking:
+            raise RuntimeError(
+                f"Spot launch is failing for a non-capacity reason in {AZ}: {sorted(blocking)}"
+            )
         LOG.info("No compatible Spot capacity is currently available in %s", AZ)
         return None
     instance_ids = [item["InstanceIds"][0] for item in instances if item.get("InstanceIds")]
@@ -239,7 +248,8 @@ def handler(event, context):
             dynamodb.delete_item(
                 TableName=LOCK_TABLE,
                 Key={"lockKey": {"S": PROJECT_TAG}},
-                ConditionExpression="owner = :owner",
+                ConditionExpression="#owner = :owner",
+                ExpressionAttributeNames={"#owner": "owner"},
                 ExpressionAttributeValues={":owner": {"S": owner}},
             )
         except ClientError as error:
