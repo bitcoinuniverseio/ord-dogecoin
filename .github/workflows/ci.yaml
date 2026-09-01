@@ -52,6 +52,10 @@ jobs:
             deploy/aws-doge-index/source/universe-doge-ebs-cutover.service
           grep -Fq 'TimeoutStartSec=infinity' \
             deploy/aws-doge-index/source/universe-doge-ebs-cutover.service
+          grep -Fq -- '-R 127.0.0.1:22566:127.0.0.1:22566' \
+            deploy/aws-doge-index/source/universe-doge-rpc-tunnel.service
+          grep -Fq -- '-L 127.0.0.1:8390:127.0.0.1:8390' \
+            deploy/aws-doge-index/source/universe-doge-rpc-tunnel.service
           grep -Fq 'systemctl start --no-block universe-doge-ebs-cutover' \
             deploy/aws-doge-index/README.md
           grep -Fq -- '- ec2:RunInstances' deploy/aws-doge-index/template.yaml
