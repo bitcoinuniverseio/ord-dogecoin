@@ -4,7 +4,7 @@
   "name": "Ord for Dogecoin",
   "classification": "implementation",
   "repository": "bitcoinuniverseio/ord-dogecoin",
-  "documentationUrl": "https://docs.bitcoinuniverse.io/infrastructure/ord-dogecoin/",
+  "documentationUrl": "https://docs.bitcoinuniverse.io/developers/interfaces/",
   "docsRoot": "docs",
   "sourceRef": "develop",
   "lifecycle": "experimental",
