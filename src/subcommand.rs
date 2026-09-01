@@ -8,6 +8,7 @@ pub mod info;
 pub mod list;
 pub mod parse;
 mod preview;
+mod repair_address_index;
 pub mod dunes;
 mod server;
 pub mod subsidy;
@@ -32,6 +33,8 @@ pub(crate) enum Subcommand {
   Parse(parse::Parse),
   #[command(about = "Run an explorer server populated with inscriptions")]
   Preview(preview::Preview),
+  #[command(about = "Repair stale address-index entries")]
+  RepairAddressIndex(repair_address_index::RepairAddressIndex),
   #[command(about = "List all dunes")]
   Dunes,
   #[command(about = "Run the explorer server")]
@@ -55,6 +58,7 @@ impl Subcommand {
       Self::List(list) => list.run(options),
       Self::Parse(parse) => parse.run(),
       Self::Preview(preview) => preview.run(),
+      Self::RepairAddressIndex(repair_address_index) => repair_address_index.run(options),
       Self::Dunes => dunes::run(options),
       Self::Server(server) => {
         let index = Arc::new(Index::open(&options)?);
