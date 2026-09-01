@@ -1,5 +1,5 @@
 [Unit]
-Description=Private Dogecoin Core RPC reverse tunnel for AWS catch-up
+Description=Private Dogecoin Core RPC and Ord API tunnel for AWS catch-up
 Wants=network-online.target
 After=network-online.target dogecoind.service
 ConditionPathExists=/root/.ssh/doge-ebs-migration-ed25519
@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/ssh -N -T -i /root/.ssh/doge-ebs-migration-ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -R 127.0.0.1:22566:127.0.0.1:22566 ubuntu@63.184.178.36
+ExecStart=/usr/bin/ssh -N -T -i /root/.ssh/doge-ebs-migration-ed25519 -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -R 127.0.0.1:22566:127.0.0.1:22566 -L 127.0.0.1:8390:127.0.0.1:8390 ubuntu@63.184.178.36
 Restart=always
 RestartSec=5s
 
