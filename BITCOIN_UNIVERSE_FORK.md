@@ -9,10 +9,9 @@ This repository is the Bitcoin Universe production fork of
 - Production release branch: `main`
 
 The fork keeps upstream history and an `upstream` remote. Bitcoin Universe
-changes must pass the pinned Linux, macOS, and Windows CI before promotion to
-`main`.
+changes must pass the pinned Linux and Windows CI before promotion to `main`.
 
-CI compiles the production library and binaries on Linux, macOS, and Windows,
+CI compiles the production library and binaries on Linux and Windows,
 runs Clippy's enforced correctness lints, tests the exact authoritative authority
 JSON contract, builds the release binary, smoke-tests its CLI, and builds the
 documentation. The inherited inline upstream test modules are not a release

@@ -1,15 +1,47 @@
 openapi: 3.0.0
 info:
-  title: Wonky Ord API
-  description: API for getting transactions, blocks, balances, inscriptions, and dune info on Dogecoin.
-  version: 1.0.0
+  title: ord-dogecoin HTTP API
+  description: >-
+    HTTP API served by `ord server` in bitcoinuniverseio/ord-dogecoin: blocks,
+    transactions, outputs, inscriptions (Doginals), DRC-20 and Dunes state on
+    Dogecoin.
+
+
+    Three surfaces share one port. The `/api/v1/*` routes are the machine
+    contract: every quantity is an exact decimal string, every page is bounded
+    and ordered, every response names its indexed checkpoint, and a missing
+    index capability is an HTTP 400 with an actionable message rather than an
+    empty list. The remaining JSON routes are inherited from upstream
+    wonky-ord and are kept for compatibility. The HTML explorer routes are
+    documented here only so the surface is complete.
+
+
+    There is no authentication and no rate limiting. Index feature flags are
+    fixed when the database is created and cannot be added later, so call
+    `/api/v1/capabilities` before trusting any other endpoint.
+  version: '1'
+  license:
+    name: CC0-1.0
+    url: https://creativecommons.org/publicdomain/zero/1.0/
+externalDocs:
+  description: Repository documentation
+  url: https://github.com/bitcoinuniverseio/ord-dogecoin/blob/develop/docs/src/dogecoin/http-api.md
 servers:
-  - url: http://localhost:8080
-    description: Local development server
-  - url: https://wonky-ord.dogeord.io
-    description: Wonky Prod Server
+  - url: http://127.0.0.1:8080
+    description: A local ord server
 
 paths:
+  /:
+    get:
+      summary: Explorer home page
+      operationId: getHome
+      responses:
+        '200':
+          description: HTML explorer home
+          content:
+            text/html:
+              schema:
+                type: string
   /api/v1/capabilities:
     get:
       summary: Report what this index can answer
@@ -44,6 +76,145 @@ paths:
                   transactions:
                     type: boolean
                     description: Database was created with --index-transactions
+  /api/v1/inscriptions:
+    get:
+      summary: Walk indexed inscriptions, newest first
+      description: >-
+        Returns inscriptions with their resolved content metadata and current
+        location. When an inscription delegates its content, content_type and
+        content_length describe the delegate's bytes, which is what
+        /content/{inscription_id} serves.
+
+
+        subsidy_schedule_hash is the SHA-256 of the raw subsidies.json bytes at
+        SUBSIDIES_PATH, read at request time. Two indexes reporting different
+        hashes were built from different subsidy schedules and disagree about
+        ordinal numbers.
+      operationId: getInscriptionInventory
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The value returned as next_cursor on the previous page
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of inscriptions (1-1000, default 250)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        '200':
+          description: Paged inscription inventory at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - chain
+                  - block_count
+                  - block_hash
+                  - subsidy_schedule_hash
+                  - inventory_complete
+                  - inscriptions
+                properties:
+                  chain:
+                    type: string
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  subsidy_schedule_hash:
+                    type: string
+                    description: SHA-256 of the loaded subsidies.json
+                  inventory_complete:
+                    type: boolean
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  inscriptions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InscriptionInventoryItem'
+        '400':
+          description: Invalid limit, or SUBSIDIES_PATH is not set
+        '404':
+          description: The index has no chain tip yet
+  /api/v1/drc20/transferables:
+    get:
+      summary: List every outstanding DRC-20 transferable inscription
+      description: >-
+        Answers "what can be spent right now" for DRC-20. This is not the token
+        catalog: a deployment with no outstanding transferable does not appear
+        here. Use /api/v1/drc20/tokens for the catalog. Not paginated.
+      operationId: getDrc20TransferableInventory
+      responses:
+        '200':
+          description: Outstanding DRC-20 transferables at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [chain, block_count, block_hash, inventory_complete, transferables]
+                properties:
+                  chain:
+                    type: string
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  transferables:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - ticker
+                        - amount_atomic
+                        - decimals
+                        - max_atomic
+                        - limit_atomic
+                        - transfer_inscription_id
+                        - inscription_number
+                        - owner_address
+                        - genesis_height
+                        - transaction_index
+                        - inscription_index
+                      properties:
+                        ticker:
+                          type: string
+                        amount_atomic:
+                          type: string
+                        decimals:
+                          type: integer
+                        max_atomic:
+                          type: string
+                        limit_atomic:
+                          type: string
+                        transfer_inscription_id:
+                          type: string
+                        inscription_number:
+                          type: string
+                        owner_address:
+                          type: string
+                        genesis_height:
+                          type: integer
+                        transaction_index:
+                          type: integer
+                        inscription_index:
+                          type: integer
+                        location:
+                          allOf:
+                            - $ref: '#/components/schemas/InventoryLocation'
+                          nullable: true
+        '404':
+          description: The index has no chain tip yet
   /api/v1/drc20/tokens:
     get:
       summary: Get the DRC-20 deployment catalog with indexed protocol state
@@ -76,10 +247,22 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [chain, block_count, block_hash, inventory_complete, total_count, tokens]
+                required:
+                  - chain
+                  - drc20_index_enabled
+                  - block_count
+                  - block_hash
+                  - inventory_complete
+                  - total_count
+                  - tokens
                 properties:
                   chain:
                     type: string
+                  drc20_index_enabled:
+                    type: boolean
+                    description: >-
+                      False when this database was created without
+                      --index-drc20, so an empty catalog is never ambiguous
                   block_count:
                     type: integer
                   block_hash:
@@ -94,55 +277,170 @@ paths:
                   tokens:
                     type: array
                     items:
-                      type: object
-                      required:
-                        - ticker
-                        - deploy_inscription_id
-                        - deploy_inscription_number
-                        - decimals
-                        - max_atomic
-                        - limit_atomic
-                        - minted_atomic
-                        - remaining_atomic
-                        - holder_count
-                        - deployed_height
-                        - deployed_timestamp
-                        - deployed_by
-                        - latest_mint_number
-                        - complete
-                      properties:
-                        ticker:
-                          type: string
-                        deploy_inscription_id:
-                          type: string
-                        deploy_inscription_number:
-                          type: string
-                        decimals:
-                          type: integer
-                        max_atomic:
-                          type: string
-                        limit_atomic:
-                          type: string
-                        minted_atomic:
-                          type: string
-                        remaining_atomic:
-                          type: string
-                        holder_count:
-                          type: integer
-                        deployed_height:
-                          type: integer
-                        deployed_timestamp:
-                          type: integer
-                        deployed_by:
-                          type: string
-                        latest_mint_number:
-                          type: string
-                        complete:
-                          type: boolean
+                      $ref: '#/components/schemas/Drc20TokenInventoryItem'
         '400':
           description: >-
             Invalid cursor or limit, or this database was created without
             --index-drc20 and cannot serve DRC-20 state
+  /api/v1/drc20/tokens/{tick}:
+    get:
+      summary: Get one DRC-20 deployment with its indexed protocol state
+      description: >-
+        Same item contract as the catalog. Requires an index built with
+        --index-drc20.
+      operationId: getDrc20TokenDetail
+      parameters:
+        - name: tick
+          in: path
+          required: true
+          description: The four-byte DRC-20 ticker
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One DRC-20 deployment at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - chain
+                  - drc20_index_enabled
+                  - block_count
+                  - block_hash
+                  - inventory_complete
+                  - token
+                properties:
+                  chain:
+                    type: string
+                  drc20_index_enabled:
+                    type: boolean
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  token:
+                    $ref: '#/components/schemas/Drc20TokenInventoryItem'
+        '400':
+          description: >-
+            This database was created without --index-drc20 and cannot serve
+            DRC-20 state
+        '404':
+          description: Unknown ticker
+  /api/v1/dunes/tokens:
+    get:
+      summary: Get the dune catalog with indexed protocol state
+      description: >-
+        Returns etched dunes ordered by etching. Every quantity is an exact
+        decimal string, because dune supply arithmetic is u128 and no JSON
+        number can carry one. divisibility is the only rule by which an amount
+        here may be scaled for display. Requires an index built with
+        --index-dunes.
+      operationId: getDuneTokenCatalog
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Decimal offset over the deterministic etching order
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of dunes (1-1000, default 250)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
+      responses:
+        '200':
+          description: Paged dune catalog at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - chain
+                  - dune_index_enabled
+                  - block_count
+                  - block_hash
+                  - inventory_complete
+                  - total_count
+                  - tokens
+                properties:
+                  chain:
+                    type: string
+                  dune_index_enabled:
+                    type: boolean
+                    description: >-
+                      False when this database was created without
+                      --index-dunes
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  total_count:
+                    type: integer
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DuneTokenInventoryItem'
+        '400':
+          description: >-
+            Invalid cursor or limit, or this database was created without
+            --index-dunes and cannot serve dune state
+  /api/v1/dunes/tokens/{dune}:
+    get:
+      summary: Get one dune by spaced name or block:index identifier
+      operationId: getDuneTokenDetail
+      parameters:
+        - name: dune
+          in: path
+          required: true
+          description: The spaced dune name, or the block:index identifier of the etching
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One dune at the indexed checkpoint
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - chain
+                  - dune_index_enabled
+                  - block_count
+                  - block_hash
+                  - inventory_complete
+                  - token
+                properties:
+                  chain:
+                    type: string
+                  dune_index_enabled:
+                    type: boolean
+                  block_count:
+                    type: integer
+                  block_hash:
+                    type: string
+                  inventory_complete:
+                    type: boolean
+                  token:
+                    $ref: '#/components/schemas/DuneTokenInventoryItem'
+        '400':
+          description: >-
+            This database was created without --index-dunes and cannot serve
+            dune state
+        '404':
+          description: Unknown dune
   /api/v1/drc20/tokens/{tick}/holders:
     get:
       summary: Get DRC-20 holder balances for one ticker
@@ -782,42 +1080,6 @@ paths:
               schema:
                 type: object
 
-  /drc20/balance/{address}/{page}:
-    get:
-      summary: Get paginated DRC20 balance for an address
-      operationId: getDrc20BalancePaginated
-      parameters:
-        - name: address
-          in: path
-          required: true
-          description: Cryptocurrency address
-          schema:
-            type: string
-        - name: page
-          in: path
-          required: true
-          description: Page number
-          schema:
-            type: integer
-        - name: tick
-          in: query
-          required: false
-          description: Filter by token tick
-          schema:
-            type: string
-        - name: value_filter
-          in: query
-          required: false
-          description: Filter by value
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: DRC20 balance
-          content:
-            application/json:
-              schema:
-                type: object
 
   /dunes/balance/{address}/{page}:
     get:
@@ -1043,8 +1305,454 @@ paths:
               schema:
                 type: string
 
+  /address/{address}:
+    get:
+      summary: List the outputs held by an address
+      description: Requires the address index, which is always built.
+      operationId: getOutputsByAddress
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Outputs held by the address
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /outputs/{output_list}:
+    get:
+      summary: Get several outputs in one request
+      operationId: getOutputs
+      parameters:
+        - name: output_list
+          in: path
+          required: true
+          description: Comma-separated list of outpoints
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Output details
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /inscriptions/balance/{address}:
+    get:
+      summary: List the inscriptions held by an address
+      operationId: getInscriptionsByAddressUnpaginated
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inscriptions held by the address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InscriptionAddressJson'
+  /inscriptions/balance/{address}/{page}:
+    get:
+      summary: List the inscriptions held by an address, one page at a time
+      operationId: getInscriptionsByAddress
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: One page of inscriptions held by the address
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InscriptionAddressJson'
+  /inscriptions/validate:
+    get:
+      summary: Check ownership and validity for a list of inscriptions
+      operationId: validateInscriptions
+      parameters:
+        - name: inscription_ids
+          in: query
+          required: true
+          description: Comma-separated inscription ids
+          schema:
+            type: string
+        - name: addresses
+          in: query
+          required: false
+          description: Comma-separated addresses to check ownership against
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Validity result per inscription
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /shibescriptions:
+    get:
+      summary: Dogecoin-flavoured alias of /inscriptions
+      operationId: getShibescriptions
+      responses:
+        '200':
+          description: Latest inscriptions
+          content:
+            application/json:
+              schema:
+                type: object
+  /shibescriptions/{from}:
+    get:
+      summary: Dogecoin-flavoured alias of /inscriptions/{from}
+      operationId: getShibescriptionsFrom
+      parameters:
+        - name: from
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Inscriptions from the given position
+          content:
+            application/json:
+              schema:
+                type: object
+  /shibescriptions_on_outputs:
+    get:
+      summary: List the inscriptions on a set of outputs
+      operationId: getInscriptionsOnOutputs
+      parameters:
+        - name: outputs
+          in: query
+          required: true
+          description: Comma-separated list of outpoints
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inscriptions on those outputs
+          content:
+            application/json:
+              schema:
+                type: object
+  /shibescriptions_by_outputs:
+    get:
+      summary: List the inscriptions on a set of outputs, keyed by output
+      operationId: getInscriptionsByOutputs
+      parameters:
+        - name: outputs
+          in: query
+          required: true
+          description: Comma-separated list of outpoints
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inscriptions grouped by output
+          content:
+            application/json:
+              schema:
+                type: object
+  /drc20/ticks:
+    get:
+      summary: List every indexed DRC-20 ticker
+      description: >-
+        Legacy route. Prefer /api/v1/drc20/tokens, which is bounded, ordered,
+        and states whether the index can answer at all.
+      operationId: getDrc20Ticks
+      responses:
+        '200':
+          description: Indexed DRC-20 tickers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /drc20/tick/holder/{tick}:
+    get:
+      summary: List the holders of one DRC-20 ticker
+      description: >-
+        Legacy route. Prefer /api/v1/drc20/tokens/{tick}/holders, which is
+        bounded and reports exact atomic strings.
+      operationId: getDrc20TickHolders
+      parameters:
+        - name: tick
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Holders of the ticker
+          content:
+            application/json:
+              schema:
+                type: object
+  /ordinal/{sat}:
+    get:
+      summary: Redirect to the page for an ordinal
+      description: Requires an index built with --index-sats.
+      operationId: getOrdinal
+      parameters:
+        - name: sat
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to the sat page
+          headers:
+            Location:
+              description: URL of the sat page
+              schema:
+                type: string
+  /rare.txt:
+    get:
+      summary: List rare ordinals as plain text
+      description: Requires an index built with --index-sats.
+      operationId: getRareTxt
+      responses:
+        '200':
+          description: Rare ordinals
+          content:
+            text/plain:
+              schema:
+                type: string
+  /input/{block}/{transaction}/{input}:
+    get:
+      summary: Show one transaction input
+      operationId: getInput
+      parameters:
+        - name: block
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: transaction
+          in: path
+          required: true
+          description: Index of the transaction within the block
+          schema:
+            type: integer
+        - name: input
+          in: path
+          required: true
+          description: Index of the input within the transaction
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: HTML page for the input
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: No such block, transaction or input
+  /feed.xml:
+    get:
+      summary: RSS feed of recent inscriptions
+      operationId: getFeed
+      responses:
+        '200':
+          description: RSS feed
+          content:
+            application/rss+xml:
+              schema:
+                type: string
+  /install.sh:
+    get:
+      summary: Serve the ord install script
+      operationId: getInstallScript
+      responses:
+        '200':
+          description: Shell script
+          content:
+            text/plain:
+              schema:
+                type: string
+
 components:
   schemas:
+    InscriptionAddressJson:
+      type: object
+      required: [inscriptions, total_inscriptions]
+      properties:
+        inscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InscriptionByAddressJson'
+        total_inscriptions:
+          type: integer
+    InventoryLocation:
+      type: object
+      description: Where an inscription or transferable currently sits
+      required: [txid, vout, offset, value, script_pubkey]
+      properties:
+        txid:
+          type: string
+        vout:
+          type: integer
+        offset:
+          type: string
+        value:
+          type: string
+          description: Exact value in atomic units
+        script_pubkey:
+          type: string
+          description: Hex-encoded output script
+        address:
+          type: string
+          nullable: true
+    InscriptionInventoryItem:
+      type: object
+      required:
+        - inscription_id
+        - inscription_number
+        - genesis_height
+        - timestamp
+        - subsidy_sats
+      properties:
+        inscription_id:
+          type: string
+        inscription_number:
+          type: string
+        genesis_height:
+          type: integer
+        timestamp:
+          type: integer
+        content_type:
+          type: string
+          nullable: true
+          description: Resolved through the delegate, when there is one
+        content_length:
+          type: integer
+          nullable: true
+        subsidy_sats:
+          type: string
+          description: Subsidy of the genesis block, in atomic units
+        location:
+          allOf:
+            - $ref: '#/components/schemas/InventoryLocation'
+          nullable: true
+          description: Null when the inscription sits on lost value
+    Drc20TokenInventoryItem:
+      type: object
+      required:
+        - ticker
+        - deploy_inscription_id
+        - deploy_inscription_number
+        - decimals
+        - max_atomic
+        - limit_atomic
+        - minted_atomic
+        - remaining_atomic
+        - holder_count
+        - deployed_height
+        - deployed_timestamp
+        - deployed_by
+        - latest_mint_number
+        - complete
+      properties:
+        ticker:
+          type: string
+        deploy_inscription_id:
+          type: string
+        deploy_inscription_number:
+          type: string
+        decimals:
+          type: integer
+        max_atomic:
+          type: string
+        limit_atomic:
+          type: string
+        minted_atomic:
+          type: string
+        remaining_atomic:
+          type: string
+        holder_count:
+          type: integer
+        deployed_height:
+          type: integer
+        deployed_timestamp:
+          type: integer
+        deployed_by:
+          type: string
+        latest_mint_number:
+          type: string
+        complete:
+          type: boolean
+    DuneTokenInventoryItem:
+      type: object
+      required:
+        - dune
+        - dune_id
+        - number
+        - divisibility
+        - etching_txid
+        - supply_atomic
+        - premine_atomic
+        - mints_atomic
+        - burned_atomic
+        - etched_height
+        - etched_timestamp
+        - mintable
+      properties:
+        dune:
+          type: string
+          description: The spaced name, exactly as the protocol displays it
+        dune_id:
+          type: string
+          description: The block:index identifier of the etching
+        number:
+          type: string
+        symbol:
+          type: string
+          nullable: true
+          description: Null when no symbol was etched
+        divisibility:
+          type: integer
+        etching_txid:
+          type: string
+        supply_atomic:
+          type: string
+        premine_atomic:
+          type: string
+        mints_atomic:
+          type: string
+        burned_atomic:
+          type: string
+        etched_height:
+          type: string
+        etched_timestamp:
+          type: integer
+        mintable:
+          type: boolean
+          description: Whether the terms allow a mint in the next block
     Utxo:
       type: object
       properties:
