@@ -83,7 +83,10 @@ before being fixed:
 ## Measured RPC path
 
 Dogecoin Core stays on Universe Indexers and is reached over an SSH reverse
-tunnel bound to the AWS loopback interface. Measured from the AWS host while the
+tunnel bound to the AWS loopback interface. The same authenticated connection
+forwards the AWS Ord API back to `127.0.0.1:8390` on Universe Indexers so
+`index-doge-tap` can keep using its private loopback authority URL without
+opening the EC2 HTTP port publicly. Measured from the AWS host while the
 migration was saturating the link: 95 ms for a single `getblock`, and 261 full
 blocks per second in a synthetic 32-request block-fetch test. The production
 indexer also performs transaction lookups, so its automatic concurrency is
@@ -202,6 +205,9 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
     start without the checkpoint evidence, `START_INDEXER`, or with a remaining
     height limit.
     Abort immediately if the observed checkpoint is zero or behind the manifest.
+    Confirm the source tunnel owns `127.0.0.1:8390` and that
+    `/api/v1/capabilities` reports the migrated Dogecoin checkpoint before
+    restarting `index-doge-tap`.
 13. Enable the controller and both EventBridge rules. Test one controlled Spot
     replacement before relying on unattended recovery.
 14. At tip, run `control/validate-index.sh`. It checks the manifest floor, a deep
