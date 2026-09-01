@@ -307,9 +307,15 @@ total_kb=$(awk '/MemTotal:/ {print $2}' /proc/meminfo)
 cache_bytes=$(( total_kb * 1024 / 2 ))
 (( cache_bytes > 68719476736 )) && cache_bytes=68719476736
 (( cache_bytes < 4294967296 )) && cache_bytes=4294967296
+# Dogecoin Core's production RPC endpoint is shared across the reverse tunnel.
+# More than four indexer workers exhausts its request capacity during transaction
+# lookups, which makes Core return HTTP 500 and causes the updater to replay the
+# same uncommitted batch indefinitely. Keep the automatic value within the
+# verified capacity. An operator can still raise it explicitly in indexer.env
+# after increasing and validating the source node's RPC capacity.
 parallel=$(( $(nproc) * 2 ))
-(( parallel > 32 )) && parallel=32
-(( parallel < 4 )) && parallel=4
+(( parallel > 4 )) && parallel=4
+(( parallel < 1 )) && parallel=1
 printf 'DB_CACHE_SIZE=%s\nRPC_PARALLEL_REQUESTS=%s\n' "$cache_bytes" "$parallel" \
   >"$MOUNT_POINT/control/indexer.env.auto"
 chmod 0640 "$MOUNT_POINT/control/indexer.env.auto"
