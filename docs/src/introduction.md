@@ -1,6 +1,16 @@
 Introduction
 ============
 
+> **Reading this in the `bitcoinuniverseio/ord-dogecoin` repository?**
+>
+> This handbook is inherited from the upstream `casey/ord` project and
+> describes ordinal theory on **Bitcoin**. The concepts carry over to Dogecoin;
+> the numbers, the block interval, the subsidy schedule, the address formats
+> and the inscription encoding do not.
+>
+> For what the software in this repository actually does, start at
+> [Ord for Dogecoin](dogecoin.md).
+
 This handbook is a guide to ordinal theory. Ordinal theory concerns itself with
 satoshis, giving them individual identities and allowing them to be tracked,
 transferred, and imbued with meaning.
