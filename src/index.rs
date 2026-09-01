@@ -17,8 +17,8 @@ use {
   indicatif::{ProgressBar, ProgressStyle},
   log::log_enabled,
   redb::{
-    Database, DatabaseError, MultimapTable, MultimapTableDefinition, ReadableTable, StorageError,
-    Table, TableDefinition, WriteTransaction,
+    Database, DatabaseError, MultimapTable, MultimapTableDefinition, ReadableMultimapTable,
+    ReadableTable, StorageError, Table, TableDefinition, WriteTransaction,
   },
   std::collections::HashMap,
   std::io::Cursor,
@@ -70,7 +70,9 @@ define_table! { INSCRIPTION_TXID_TO_TX, &[u8], &[u8] }
 define_table! { PARTIAL_TXID_TO_INSCRIPTION_TXIDS, &[u8], &[u8] }
 define_table! { OUTPOINT_TO_SAT_RANGES, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_VALUE, &OutPointValue, u64}
+define_table! { OUTPOINT_TO_ADDRESS, &OutPointValue, &[u8]}
 define_multimap_table! { ADDRESS_TO_OUTPOINT, &[u8], &OutPointValue}
+define_table! { ADDRESS_INDEX_REPAIR_STATE, u8, &[u8]}
 define_table! { DUNE_ID_TO_DUNE_ENTRY, DuneIdValue, DuneEntryValue }
 define_table! { DUNE_TO_DUNE_ID, u128, DuneIdValue }
 define_table! { SATPOINT_TO_INSCRIPTION_ID, &SatPointValue, &InscriptionIdValue }
@@ -157,6 +159,17 @@ pub(crate) struct Info {
   pub(crate) transactions: Vec<TransactionInfo>,
   pub(crate) tree_height: u32,
   pub(crate) utxos_indexed: u64,
+}
+
+#[derive(Serialize)]
+pub(crate) struct AddressIndexRepairReport {
+  pub(crate) addresses_scanned: u64,
+  pub(crate) live_outputs_recorded: u64,
+  pub(crate) stale_outputs_removed: u64,
+  pub(crate) batches_committed: u64,
+  pub(crate) compacted: bool,
+  pub(crate) index_file_size_before: u64,
+  pub(crate) index_file_size_after: u64,
 }
 
 #[derive(Serialize)]
@@ -322,7 +335,9 @@ impl Index {
         tx.open_table(INSCRIPTION_TXID_TO_TX)?;
         tx.open_table(PARTIAL_TXID_TO_INSCRIPTION_TXIDS)?;
         tx.open_table(OUTPOINT_TO_VALUE)?;
+        tx.open_table(OUTPOINT_TO_ADDRESS)?;
         tx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
+        tx.open_table(ADDRESS_INDEX_REPAIR_STATE)?;
         tx.open_table(SATPOINT_TO_INSCRIPTION_ID)?;
         tx.open_table(SAT_TO_INSCRIPTION_ID)?;
         tx.open_table(SAT_TO_SATPOINT)?;
@@ -857,20 +872,156 @@ impl Index {
   pub(crate) fn get_account_outputs(&self, address: String) -> Result<Vec<OutPoint>> {
     let mut result: Vec<OutPoint> = Vec::new();
 
-    self
-      .database
-      .begin_read()?
-      .open_multimap_table(ADDRESS_TO_OUTPOINT)?
-      .get(address.as_bytes())?
-      .for_each(|res| {
-        if let Ok(item) = res {
-          result.push(OutPoint::load(*item.value()));
-        } else {
-          println!("Error: {:?}", res.err().unwrap());
-        }
-      });
+    let rtx = self.database.begin_read()?;
+    let address_to_outpoint = rtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
+    let outpoint_to_value = rtx.open_table(OUTPOINT_TO_VALUE)?;
+
+    for item in address_to_outpoint.get(address.as_bytes())? {
+      let item = item?;
+      let outpoint = *item.value();
+
+      // Older indexes could retain address entries after their outputs were
+      // spent when transaction indexing was disabled. Never expose those
+      // stale rows as account outputs.
+      if outpoint_to_value.get(&outpoint)?.is_some() {
+        result.push(OutPoint::load(outpoint));
+      }
+    }
 
     Ok(result)
+  }
+
+  pub(crate) fn repair_address_index(
+    &mut self,
+    address_batch_size: usize,
+    compact: bool,
+  ) -> Result<AddressIndexRepairReport> {
+    use std::ops::Bound::{Excluded, Unbounded};
+
+    ensure!(address_batch_size > 0, "address batch size must be greater than zero");
+
+    let index_file_size_before = fs::metadata(&self.path)?.len();
+    let mut addresses_scanned = 0_u64;
+    let mut live_outputs_recorded = 0_u64;
+    let mut stale_outputs_removed = 0_u64;
+    let mut batches_committed = 0_u64;
+
+    // Legacy schema-6 databases predate these two tables. Create them in a
+    // durable empty transaction before the first resumable read.
+    let wtx = self.database.begin_write()?;
+    wtx.open_table(OUTPOINT_TO_ADDRESS)?;
+    wtx.open_table(ADDRESS_INDEX_REPAIR_STATE)?;
+    wtx.commit()?;
+
+    log::info!("Loading the current unspent-output set for address-index repair");
+    let unspent_outputs = {
+      let rtx = self.database.begin_read()?;
+      rtx
+        .open_table(OUTPOINT_TO_VALUE)?
+        .iter()?
+        .map(|entry| entry.map(|(outpoint, _)| *outpoint.value()))
+        .collect::<std::result::Result<HashSet<OutPointValue>, _>>()?
+    };
+    log::info!("Loaded {} unspent outputs", unspent_outputs.len());
+
+    loop {
+      let (rows, last_address) = {
+        let rtx = self.database.begin_read()?;
+        let repair_state = rtx.open_table(ADDRESS_INDEX_REPAIR_STATE)?;
+        let cursor = repair_state.get(&0)?.map(|value| value.value().to_vec());
+        let address_to_outpoint = rtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
+
+        let mut iterator = match cursor.as_deref() {
+          Some(cursor) => address_to_outpoint.range::<&[u8]>((Excluded(cursor), Unbounded))?,
+          None => address_to_outpoint.iter()?,
+        };
+
+        let mut rows = Vec::new();
+        let mut last_address = None;
+
+        for _ in 0..address_batch_size {
+          let Some(entry) = iterator.next() else {
+            break;
+          };
+          let (address, outpoints) = entry?;
+          let address = address.value().to_vec();
+          let mut live = Vec::new();
+          let mut stale = Vec::new();
+
+          for outpoint in outpoints {
+            let outpoint = *outpoint?.value();
+            if unspent_outputs.contains(&outpoint) {
+              live.push(outpoint);
+            } else {
+              stale.push(outpoint);
+            }
+          }
+
+          last_address = Some(address.clone());
+          rows.push((address, live, stale));
+        }
+
+        (rows, last_address)
+      };
+
+      if rows.is_empty() {
+        let wtx = self.database.begin_write()?;
+        wtx.open_table(ADDRESS_INDEX_REPAIR_STATE)?.remove(&0)?;
+        wtx.commit()?;
+        break;
+      }
+
+      let wtx = self.database.begin_write()?;
+      {
+        let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
+        let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
+
+        for (address, live, stale) in &rows {
+          for outpoint in live {
+            outpoint_to_address.insert(outpoint, address.as_slice())?;
+          }
+          for outpoint in stale {
+            address_to_outpoint.remove(address.as_slice(), outpoint)?;
+          }
+        }
+      }
+      wtx
+        .open_table(ADDRESS_INDEX_REPAIR_STATE)?
+        .insert(&0, last_address.as_deref().unwrap())?;
+      wtx.commit()?;
+
+      addresses_scanned += u64::try_from(rows.len()).unwrap();
+      live_outputs_recorded += rows
+        .iter()
+        .map(|(_, live, _)| u64::try_from(live.len()).unwrap())
+        .sum::<u64>();
+      stale_outputs_removed += rows
+        .iter()
+        .map(|(_, _, stale)| u64::try_from(stale.len()).unwrap())
+        .sum::<u64>();
+      batches_committed += 1;
+
+      log::info!(
+        "Address-index repair committed batch {batches_committed}: {addresses_scanned} addresses scanned, {live_outputs_recorded} live outputs recorded, {stale_outputs_removed} stale outputs removed"
+      );
+    }
+
+    let compacted = if compact {
+      log::info!("Compacting the repaired database");
+      self.database.compact()?
+    } else {
+      false
+    };
+
+    Ok(AddressIndexRepairReport {
+      addresses_scanned,
+      live_outputs_recorded,
+      stale_outputs_removed,
+      batches_committed,
+      compacted,
+      index_file_size_before,
+      index_file_size_after: fs::metadata(&self.path)?.len(),
+    })
   }
 
   pub(crate) fn block_header(&self, hash: BlockHash) -> Result<Option<BlockHeader>> {

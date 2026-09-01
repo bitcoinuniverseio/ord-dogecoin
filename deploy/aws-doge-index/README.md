@@ -110,6 +110,30 @@ The code persists the checkpoint in `HEIGHT_TO_BLOCK_HASH`. Startup opens the
 existing REDB, derives `block_count` from the last stored height, and begins at
 that count. It creates a database only when the configured path does not exist.
 
+## Address-index repair and compaction
+
+Indexes created without `--index-transactions` by older binaries can retain an
+address-to-output row after the output is spent. The server now filters those
+rows against the unspent-output table, records the address beside every new
+unspent output, and removes both directions together when that output is spent.
+
+Before continuing a migrated legacy database, stop its only writer and run the
+resumable repair with the same global index, chain, authentication, and cache
+arguments used by the service:
+
+```text
+ord [global arguments] repair-address-index --address-batch-size 1000 --compact
+```
+
+The repair loads the unspent-output keys, scans address keys in order, removes
+spent rows, backfills the reverse lookup for live rows, and commits its cursor
+after every batch. A restart resumes after the last committed address. The
+optional compaction runs only after repair completes and no database transaction
+is open. Do not interrupt compaction: REDB intentionally uses its slow-repair
+durability path for this operation. Keep the previous source database and the
+production endpoint available until the repaired copy has restarted and passed
+the deep-anchor, inventory, and tip checks.
+
 ## Capacity calculation
 
 The file currently uses 1,464.18 GiB. A deliberately conservative projection
@@ -171,18 +195,21 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
     stops it, records `control/source-checkpoint.ok`, and only then removes the
     limit. A failed verification leaves the limit in place and the service
     stopped.
-11. Run `sudo /usr/local/sbin/doge-index-activate start-catchup`. It refuses to
+11. If the source used a legacy address index, run the stopped-writer repair and
+    compaction described above, then repeat `verify-source` against the repaired
+    database.
+12. Run `sudo /usr/local/sbin/doge-index-activate start-catchup`. It refuses to
     start without the checkpoint evidence, `START_INDEXER`, or with a remaining
     height limit.
     Abort immediately if the observed checkpoint is zero or behind the manifest.
-12. Enable the controller and both EventBridge rules. Test one controlled Spot
+13. Enable the controller and both EventBridge rules. Test one controlled Spot
     replacement before relying on unattended recovery.
-13. At tip, run `control/validate-index.sh`. It checks the manifest floor, a deep
+14. At tip, run `control/validate-index.sh`. It checks the manifest floor, a deep
     history anchor (inscription 100 at genesis height 4609847), a
     checkpoint-adjacent anchor captured from the source before it was stopped
     (178908755 at 5782326), inventory completeness, and tip agreement. Then
     restart once on the same EBS database and confirm it catches the next block.
-14. Create the final snapshot, measure steady-state storage demand, reduce gp3
+15. Create the final snapshot, measure steady-state storage demand, reduce gp3
     IOPS and throughput safely, and terminate expensive catch-up compute.
 
 ## Required tags on the retained volume
