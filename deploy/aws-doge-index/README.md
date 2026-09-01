@@ -137,8 +137,13 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
    It performs steps 7 to 9 as one resumable unit and refuses to start while the
    preseed is still running. Each stage leaves a marker under
    `/var/lib/universe-doge-cutover`, so an interrupted run resumes rather than
-   re-copying the database. Prefer `systemctl start universe-doge-ebs-cutover`
-   so the work survives an SSH disconnect.
+   re-copying the database. Install the versioned
+   `source/universe-doge-ebs-cutover.service`, reload systemd, and start it with
+   `systemctl start --no-block universe-doge-ebs-cutover`. The detached start is
+   required: interrupting a blocking `systemctl start` client can cancel the
+   active oneshot and send it SIGTERM. Follow progress with `systemctl show` and
+   `journalctl -u universe-doge-ebs-cutover` instead of holding the start client
+   open.
 8. It gracefully stops only the primary Ord Dogecoin writer, waits for shutdown,
    proves no open database handle remains, and leaves Dogecoin Core and the
    other indexes running. It records the source checkpoint and block hash first,
@@ -147,6 +152,13 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
    SHA-256, and writes `control/migration-manifest.json`. The source stays intact
    as the rollback copy but is disabled, so a reboot cannot silently resume a
    writer that would diverge from the migrated database.
+   If an interrupted in-place rsync would rewrite the large REDB serially, use
+   `hash-database-chunks.sh` on both stopped copies and run
+   `repair-database-chunks.sh` on the source. The repair holds the destination
+   transfer lock, refuses open database handles, copies only unequal fixed
+   offsets, rehashes every destination chunk, and publishes `final-copy.ok` only
+   after independent whole-file SHA-256 equality. The normal cutover can then
+   resume at manifest publication.
 10. Run `sudo /usr/local/sbin/doge-index-activate verify-source` on the AWS host.
     It writes an exact `HEIGHT_LIMIT` from the migration manifest, starts the
     migrated binary, requires the same capability block count and block hash,

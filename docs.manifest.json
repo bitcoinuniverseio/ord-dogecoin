@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "ord-dogecoin",
+  "name": "Ord for Dogecoin",
+  "classification": "implementation",
+  "repository": "bitcoinuniverseio/ord-dogecoin",
+  "documentationUrl": "https://docs.bitcoinuniverse.io/infrastructure/ord-dogecoin/",
+  "docsRoot": "docs",
+  "sourceRef": "develop",
+  "lifecycle": "experimental",
+  "chains": [
+    {
+      "chain": "dogecoin",
+      "networks": [
+        "mainnet"
+      ]
+    }
+  ],
+  "protocols": [
+    "ordinals",
+    "tap"
+  ],
+  "audiences": [
+    "indexer-operator",
+    "app-developer",
+    "protocol-implementer"
+  ],
+  "contracts": {
+    "openapi": [
+      "openapi.yaml"
+    ]
+  },
+  "owners": [
+    "bitcoinuniverseio"
+  ],
+  "upstream": {
+    "project": "Trac-Systems/ord-dogecoin",
+    "url": "https://github.com/Trac-Systems/ord-dogecoin",
+    "license": "CC0-1.0",
+    "relationship": "fork",
+    "divergenceSummary": "Dogecoin Ordinals implementation, itself derived from apezord/ord-dogecoin. Universe changes are recorded in BITCOIN_UNIVERSE_FORK.md."
+  },
+  "lastVerified": {
+    "commit": "26b96c8ec5f3d4cab9ff5265966b627dd18d08e4",
+    "timestamp": "2026-09-01T02:00:00Z"
+  },
+  "securityClassification": "public"
+}
