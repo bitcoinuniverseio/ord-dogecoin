@@ -189,6 +189,7 @@ Resources:
                   - ec2:DescribeVolumes
                   - ec2:ModifyInstanceAttribute
                   - ec2:ModifyLaunchTemplate
+                  - ec2:RunInstances
                   - iam:PassRole
                 Resource: '*'
               - Effect: Allow

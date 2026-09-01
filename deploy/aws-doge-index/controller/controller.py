@@ -239,7 +239,8 @@ def handler(event, context):
             dynamodb.delete_item(
                 TableName=LOCK_TABLE,
                 Key={"lockKey": {"S": PROJECT_TAG}},
-                ConditionExpression="owner = :owner",
+                ConditionExpression="#owner = :owner",
+                ExpressionAttributeNames={"#owner": "owner"},
                 ExpressionAttributeValues={":owner": {"S": owner}},
             )
         except ClientError as error:
