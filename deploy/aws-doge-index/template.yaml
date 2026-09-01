@@ -178,6 +178,7 @@ Resources:
                   - ec2:AssociateAddress
                   - ec2:AttachVolume
                   - ec2:CreateFleet
+                  - ec2:RunInstances
                   - ec2:CreateLaunchTemplateVersion
                   - ec2:CreateTags
                   - ec2:DescribeAddresses
@@ -189,6 +190,7 @@ Resources:
                   - ec2:DescribeVolumes
                   - ec2:ModifyInstanceAttribute
                   - ec2:ModifyLaunchTemplate
+                  - ec2:RunInstances
                   - iam:PassRole
                 Resource: '*'
               - Effect: Allow
