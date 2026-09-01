@@ -120,6 +120,13 @@ instance supports it and CloudWatch plus OS metrics show storage pressure.
    SHA-256, and writes `control/migration-manifest.json`. The source stays intact
    as the rollback copy but is disabled, so a reboot cannot silently resume a
    writer that would diverge from the migrated database.
+   If an interrupted in-place rsync would rewrite the large REDB serially, use
+   `hash-database-chunks.sh` on both stopped copies and run
+   `repair-database-chunks.sh` on the source. The repair holds the destination
+   transfer lock, refuses open database handles, copies only unequal fixed
+   offsets, rehashes every destination chunk, and publishes `final-copy.ok` only
+   after independent whole-file SHA-256 equality. The normal cutover can then
+   resume at manifest publication.
 10. Run `sudo /usr/local/sbin/doge-index-activate verify-source` on the AWS host.
     It writes an exact `HEIGHT_LIMIT` from the migration manifest, starts the
     migrated binary, requires the same capability block count and block hash,
