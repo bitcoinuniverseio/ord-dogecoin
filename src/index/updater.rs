@@ -350,6 +350,7 @@ impl<'index> Updater<'_> {
     };
 
     let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
+    let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
     let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
 
     let index_inscriptions = self.height >= index.first_inscription_height;
@@ -430,6 +431,7 @@ impl<'index> Updater<'_> {
         lost_sats,
         &mut inscription_number_to_inscription_id,
         &mut outpoint_to_value,
+        &mut outpoint_to_address,
         &mut address_to_outpoint,
         &mut sat_to_inscription_id,
         &mut satpoint_to_inscription_id,
@@ -695,11 +697,13 @@ impl<'index> Updater<'_> {
 
     {
       let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
+      let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
       let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
 
       for (outpoint, map) in value_cache {
         outpoint_to_value.insert(&outpoint.store(), map.0)?;
         if map.1 != [0u8; 34] {
+          outpoint_to_address.insert(&outpoint.store(), map.1.as_slice())?;
           address_to_outpoint.insert(map.1.as_slice(), &outpoint.store())?;
         }
       }
