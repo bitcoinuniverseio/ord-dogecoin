@@ -1,0 +1,11 @@
+[Unit]
+Description=Consistency cutover of the Dogecoin index onto the retained AWS EBS volume
+ConditionPathExists=/usr/local/sbin/universe-doge-ebs-cutover
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DESTINATION=ubuntu@63.184.178.36
+Environment=SSH_KEY=/root/.ssh/doge-ebs-migration-ed25519
+ExecStart=/usr/local/sbin/universe-doge-ebs-cutover
+TimeoutStartSec=infinity
