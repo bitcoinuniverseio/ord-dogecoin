@@ -54,18 +54,19 @@ blocks that already match. Measured on this migration: **3.1 MB/s, which is
 5.8 days for 1.5 TB**, while the volume sat 96 percent idle at queue depth 1.0
 and 1,550 of 16,000 provisioned IOPS. It is not a tuning problem.
 
-`chunk-compare-repair.sh` reads the same data in parallel instead. Both sides
-hash the file in 64 MiB chunks (`chunk/chunk-hash.sh`), the digest lists are
-compared positionally, only genuinely differing ranges are streamed over a
-single connection (`chunk/chunk-apply.sh`), and each repaired chunk is
-re-verified individually (`chunk/chunk-verify.sh`). Measured on the same
-hardware: source 2,722 MB/s, destination 1,006 MB/s, which is exactly the
-provisioned gp3 throughput. **Roughly 26 minutes rather than 5.8 days.**
+`repair-database-chunks.sh` reads the same data in parallel instead. Both sides
+hash the file in 64 MiB chunks (`hash-database-chunks.sh`), the digest lists are
+compared positionally, and only genuinely differing ranges are streamed over a
+single connection (`chunk/chunk-apply.sh`). Every destination chunk is then
+rehashed and the whole-file SHA-256 values are compared independently. Measured
+on the same hardware: source 2,722 MB/s, destination 1,006 MB/s, which is
+exactly the provisioned gp3 throughput. **Roughly 26 minutes rather than 5.8
+days.**
 
 It also produces better evidence. 23,427 independent chunk digests localise any
 corruption to a 64 MiB range instead of only telling you that a 1.5 TB file is
-wrong somewhere, and the manifest records a Merkle style digest over the whole
-list.
+wrong somewhere, while the existing cutover manifest still records the
+independently verified whole-file digest.
 
 Two traps when writing this kind of tooling, both of which corrupted data here
 before being fixed:
