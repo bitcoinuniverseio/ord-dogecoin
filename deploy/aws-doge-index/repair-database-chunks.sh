@@ -11,20 +11,22 @@ SOURCE_DB=${SOURCE_DB:-/data/indexers-b/ord-dogecoin/doginals.redb}
 REMOTE_DB=${REMOTE_DB:-/mnt/doge-index/data/doginals.redb}
 STATE=${STATE:-/var/lib/universe-doge-cutover}
 REMOTE_STATE=${REMOTE_STATE:-/mnt/doge-index/control}
-WORKERS=${WORKERS:-8}
 HASH_WORKERS=${HASH_WORKERS:-16}
 CHUNK_MIB=${CHUNK_MIB:-64}
 SOURCE_HASHES=${SOURCE_HASHES:-$STATE/src-chunks.tsv}
 DESTINATION_HASHES=${DESTINATION_HASHES:-$STATE/dst-chunks.tsv}
 HASHER=${HASHER:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hash-database-chunks.sh}
+APPLIER=${APPLIER:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/chunk/chunk-apply.sh}
 REMOTE_HASHER=/usr/local/sbin/doge-hash-database-chunks
+REMOTE_APPLIER=/usr/local/sbin/doge-apply-database-chunks
 REMOTE_HASHES=$REMOTE_STATE/dst-chunks.tsv
+REMOTE_DIFFERENCES=$REMOTE_STATE/differing-chunks.txt
 SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes)
 
-[[ "$WORKERS" =~ ^[1-9][0-9]*$ ]]
 [[ "$HASH_WORKERS" =~ ^[1-9][0-9]*$ ]]
 [[ "$CHUNK_MIB" =~ ^[1-9][0-9]*$ ]]
 [[ -x "$HASHER" ]]
+[[ -f "$APPLIER" ]]
 [[ -f "$SOURCE_DB" ]]
 
 install -d -m 0750 "$STATE"
@@ -72,31 +74,29 @@ validate_manifest "${DESTINATION_HASHES}.partial"
 mv -f -- "${DESTINATION_HASHES}.partial" "$DESTINATION_HASHES"
 
 differences="$STATE/differing-chunks.tsv"
+indexes="$STATE/differing-chunks.txt"
 awk 'NR == FNR { destination[$1] = $2; next }
      !($1 in destination) || destination[$1] != $2 { print $1 "\t" $2 }' \
   "$DESTINATION_HASHES" "$SOURCE_HASHES" >"${differences}.partial"
 mv -f -- "${differences}.partial" "$differences"
+cut -f1 "$differences" >"${indexes}.partial"
+mv -f -- "${indexes}.partial" "$indexes"
 difference_count=$(wc -l <"$differences")
 printf 'differing_chunks=%s total_chunks=%s\n' "$difference_count" "$chunks"
 
 # Install the exact versioned hasher on the target before it is used for the
 # post-repair proof.
 "${SSH[@]}" "$DESTINATION" "sudo install -m 0755 /dev/stdin '$REMOTE_HASHER'" <"$HASHER"
-
-repair_one() {
-  local index=$1
-  dd if="$SOURCE_DB" bs="${CHUNK_MIB}M" skip="$index" count=1 status=none | \
-    ssh -i "$SSH_KEY" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-      "$DESTINATION" \
-      "sudo dd of='$REMOTE_DB' bs='${CHUNK_MIB}M' seek='$index' count=1 conv=notrunc status=none"
-  printf '%s\n' "$index"
-}
-export -f repair_one
-export SOURCE_DB CHUNK_MIB DESTINATION SSH_KEY REMOTE_DB
+"${SSH[@]}" "$DESTINATION" "sudo install -m 0755 /dev/stdin '$REMOTE_APPLIER'" <"$APPLIER"
+"${SSH[@]}" "$DESTINATION" "sudo tee '$REMOTE_DIFFERENCES' >/dev/null" <"$indexes"
 
 if (( difference_count > 0 )); then
-  cut -f1 "$differences" | xargs -P "$WORKERS" -n 1 bash -c 'set -o pipefail; repair_one "$1"' _ \
-    >"$STATE/repaired-chunks.log"
+  while read -r index <&3; do
+    dd if="$SOURCE_DB" bs="${CHUNK_MIB}M" skip="$index" count=1 status=none
+  done 3<"$indexes" | \
+    "${SSH[@]}" "$DESTINATION" \
+      "sudo '$REMOTE_APPLIER' '$REMOTE_DB' '$REMOTE_DIFFERENCES' '$CHUNK_MIB'" \
+      >"$STATE/repaired-chunks.log" 2>&1
   remote "sync"
 fi
 
