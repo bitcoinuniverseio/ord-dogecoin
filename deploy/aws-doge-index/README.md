@@ -41,7 +41,10 @@ must never enter the pool.
 Because instance size therefore varies between replacements, the indexer tuning
 cannot be a constant. Bootstrap derives it from the hardware present on each
 boot into `control/indexer.env.auto`: half of RAM as the REDB cache capped at
-64 GiB, and `nproc * 2` parallel RPC requests capped at 32. The unit reads that
+64 GiB, and `nproc * 2` parallel RPC requests capped at 4. The RPC cap matches
+the verified capacity of the shared Dogecoin Core endpoint across the reverse
+tunnel. Higher concurrency can make transaction lookups return HTTP 500 and
+replay the same uncommitted index batch. The unit reads that
 file before the operator-owned `control/indexer.env`, so manual overrides win.
 
 ## Why the final pass does not use an rsync delta
@@ -82,9 +85,11 @@ before being fixed:
 Dogecoin Core stays on Universe Indexers and is reached over an SSH reverse
 tunnel bound to the AWS loopback interface. Measured from the AWS host while the
 migration was saturating the link: 95 ms for a single `getblock`, and 261 full
-blocks per second at 32 concurrent requests. The remaining catch-up is therefore
-well under an hour of fetching, so the remote node is not the bottleneck and
-there is no reason to place a second copy of the Dogecoin chain on AWS storage.
+blocks per second in a synthetic 32-request block-fetch test. The production
+indexer also performs transaction lookups, so its automatic concurrency is
+capped at four to stay within the shared RPC endpoint's verified capacity. The
+remote node remains fast enough that there is no reason to place a second copy
+of the Dogecoin chain on AWS storage.
 
 ## Verified source state on 2026-08-31
 
