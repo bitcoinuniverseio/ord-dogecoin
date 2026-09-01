@@ -36,6 +36,7 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   next_number: u64,
   number_to_id: &'a mut Table<'tx, u64, &'static InscriptionIdValue>,
   outpoint_to_value: &'a mut Table<'tx, &'static OutPointValue, u64>,
+  outpoint_to_address: &'a mut Table<'tx, &'static OutPointValue, &'static [u8]>,
   address_to_outpoint: &'a mut MultimapTable<'tx, &'static [u8], &'static OutPointValue>,
   reward: u64,
   sat_to_inscription_id: &'a mut Table<'tx, u64, &'static InscriptionIdValue>,
@@ -60,6 +61,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     lost_sats: u64,
     number_to_id: &'a mut Table<'tx, u64, &'static InscriptionIdValue>,
     outpoint_to_value: &'a mut Table<'tx, &'static OutPointValue, u64>,
+    outpoint_to_address: &'a mut Table<'tx, &'static OutPointValue, &'static [u8]>,
     address_to_outpoint: &'a mut MultimapTable<'tx, &'static [u8], &'static OutPointValue>,
     sat_to_inscription_id: &'a mut Table<'tx, u64, &'static InscriptionIdValue>,
     satpoint_to_id: &'a mut Table<'tx, &'static SatPointValue, &'static InscriptionIdValue>,
@@ -92,6 +94,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       next_number,
       number_to_id,
       outpoint_to_value,
+      outpoint_to_address,
       address_to_outpoint,
       reward: Height(height).subsidy(),
       sat_to_inscription_id,
@@ -150,7 +153,15 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           .outpoint_to_value
           .remove(&tx_in.previous_output.store())?
         {
-          if let Some(transaction) = self
+          if let Some(address) = self
+            .outpoint_to_address
+            .remove(&tx_in.previous_output.store())?
+          {
+            self.address_to_outpoint.remove(
+              address.value(),
+              &tx_in.previous_output.store(),
+            )?;
+          } else if let Some(transaction) = self
             .transaction_id_to_transaction
             .get(&tx_in.previous_output.txid.store())?
           {
