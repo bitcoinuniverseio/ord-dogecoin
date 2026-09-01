@@ -44,6 +44,38 @@ boot into `control/indexer.env.auto`: half of RAM as the REDB cache capped at
 64 GiB, and `nproc * 2` parallel RPC requests capped at 32. The unit reads that
 file before the operator-owned `control/indexer.env`, so manual overrides win.
 
+## Why the final pass does not use an rsync delta
+
+`migrate-source.sh hot-copy` is fine: it writes a file that does not exist yet.
+The final consistency pass is different, and an rsync delta is the wrong tool
+for it. With `--inplace` the basis file IS the destination, so rsync reads and
+rewrites every block of the file serially at queue depth one, including the
+blocks that already match. Measured on this migration: **3.1 MB/s, which is
+5.8 days for 1.5 TB**, while the volume sat 96 percent idle at queue depth 1.0
+and 1,550 of 16,000 provisioned IOPS. It is not a tuning problem.
+
+`chunk-compare-repair.sh` reads the same data in parallel instead. Both sides
+hash the file in 64 MiB chunks (`chunk/chunk-hash.sh`), the digest lists are
+compared positionally, only genuinely differing ranges are streamed over a
+single connection (`chunk/chunk-apply.sh`), and each repaired chunk is
+re-verified individually (`chunk/chunk-verify.sh`). Measured on the same
+hardware: source 2,722 MB/s, destination 1,006 MB/s, which is exactly the
+provisioned gp3 throughput. **Roughly 26 minutes rather than 5.8 days.**
+
+It also produces better evidence. 23,427 independent chunk digests localise any
+corruption to a 64 MiB range instead of only telling you that a 1.5 TB file is
+wrong somewhere, and the manifest records a Merkle style digest over the whole
+list.
+
+Two traps when writing this kind of tooling, both of which corrupted data here
+before being fixed:
+
+- `dd` reading from a pipe with `count=1` takes one short read and exits,
+  writing a fraction of the chunk and killing the sender. Use `iflag=fullblock`.
+- `while read idx; do dd ...; done < list` redirects stdin for the whole loop,
+  so `dd` consumes the index list as its input and writes that text into the
+  database. Read the list on a separate descriptor (`done 3< list`).
+
 ## Measured RPC path
 
 Dogecoin Core stays on Universe Indexers and is reached over an SSH reverse
