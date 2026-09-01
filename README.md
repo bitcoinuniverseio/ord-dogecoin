@@ -1,144 +1,228 @@
-# Shibes
-# Trac & Magic Degen
+# ord-dogecoin
 
-TracSystems, operating "Magic Degen" for the Dogecoin ecosystem, offers a suite of repositories designed to provide seamless, secure, and decentralized tracking solutions. These repositories are tailored to the unique requirements of Dogecoin, enabling developers to integrate advanced tracking functionalities into their applications.
+Ordinals indexer, HTTP API and block explorer for **Dogecoin**. It assigns
+ordinal numbers to Dogecoin's atomic units, tracks inscriptions (Doginals)
+through the UTXO set, and optionally indexes DRC-20 and Dunes token state.
 
-To safe you a lot of indexing time, we provided a download for a pre-indexed redb file. The parent wonky-ord ord client won't work, because this fork is using redb 2.4.0, which is incompatible.
+This is the Bitcoin Universe fork of
+[Trac-Systems/ord-dogecoin](https://github.com/Trac-Systems/ord-dogecoin),
+which descends from
+[verydogelabs/wonky-ord-dogecoin](https://github.com/verydogelabs/wonky-ord-dogecoin),
+[apezord/ord-dogecoin](https://github.com/apezord/ord-dogecoin) and
+[casey/ord](https://github.com/casey/ord). Licensed CC0-1.0, like everything
+upstream of it.
 
-The use of the latest Redb version introduces massive speed and stability improvements over previous versions.
+| | |
+| --- | --- |
+| **Chain** | Dogecoin mainnet |
+| **Protocols** | Doginals (Ordinals), DRC-20, Dunes |
+| **Requires** | Dogecoin Core with `txindex=1`, fully synced |
+| **Storage** | One embedded redb file, schema version 6 |
+| **Language** | Rust 1.88 or newer |
+| **Lifecycle** | Experimental. No Universe release; the `1.0.x` tags are upstream's. |
 
-Please [download the file here](https://legacy.trac.network/doginals-nodrc20-nodunes-redb220.redb) (approx. 300GB) and follow the instructions below to start the index.
+## Documentation
 
-**WARNING**: this file is only for a plain inscription index and does NOT include DRC-20 and Dunes indexed data!
+Full documentation lives in [`docs/src/dogecoin/`](docs/src/dogecoin) and
+builds into this repository's mdbook.
 
-ℹ️ This is a fork/based on [apezord/ord-dogecoin](https://github.com/apezord/ord-dogecoin)
+| | |
+| --- | --- |
+| [Overview and architecture](docs/src/dogecoin.md) | What it is, what it is not, how the pieces fit |
+| [Upstream relationship](docs/src/dogecoin/upstream.md) | Lineage, license, what this fork changed |
+| [Differences from Bitcoin ord](docs/src/dogecoin/differences.md) | Why Dogecoin changes the answers |
+| [Installation](docs/src/dogecoin/install.md) | Build, Docker, systemd, requirements |
+| [Configuration](docs/src/dogecoin/configuration.md) | Every option and environment variable |
+| [Indexing](docs/src/dogecoin/indexing.md) | Initial and incremental sync |
+| [Database model](docs/src/dogecoin/database.md) | Tables, schema version, feature flags |
+| [Reorgs and mempool](docs/src/dogecoin/reorgs.md) | Savepoints, recovery limits, no mempool |
+| [HTTP API](docs/src/dogecoin/http-api.md) | Endpoint reference |
+| [CLI reference](docs/src/dogecoin/cli.md) | Every subcommand |
+| [Operations](docs/src/dogecoin/operations.md) | Health, alerting, backups, upgrades |
+| [Performance and sizing](docs/src/dogecoin/performance.md) | Disk, RAM, RPC concurrency |
+| [Troubleshooting](docs/src/dogecoin/troubleshooting.md) | Organized by symptom |
+| [Security](docs/src/dogecoin/security.md) | Threat model and hardening |
+| [Testing](docs/src/dogecoin/testing.md) | What is covered, and what is not |
+| [Releases and versioning](docs/src/dogecoin/releases.md) | Branches, CI, compatibility rules |
 
-## Key differences
+The HTTP contract is [`openapi.yaml`](openapi.yaml), an OpenAPI 3.0 document
+covering every route the server exposes. Load it into any OpenAPI tool.
 
-‼️ DISCLAIMER: OUR CODE MAY STILL HAVE BUGS️
+This repository documents the **implementation**. For the Dogecoin protocol
+rules themselves, including the inscription envelope described as a
+specification, see
+[TAP on Doge](https://bitcoinuniverseio.github.io/tap-on-doge/).
 
-We included the real wonky block rewards from block 0 until block 144,999. We invite you to critically review our code in `src/epoch.rs`. We are convinced that doginals should use actual block rewards instead of a simplified version.
+## Quick start
 
-## API documentation
-You can find the API documentation [here](openapi.yaml).
-Most convenient way to view the API documentation is to use the [Swagger Editor](https://editor.swagger.io/).
-You can import the `openapi.yaml` file and view the API documentation via Import URL: `https://raw.githubusercontent.com/verydogelabs/wonky-ord-dogecoin/main/openapi.yaml`.
-
-### Universe authority inventory
-
-`GET /api/v1/funding/{address}?limit=20` returns confirmed cardinal UTXOs for an authoritative Dogecoin address. Each item includes the exact atomic value, script, confirmations, and raw previous transaction so downstream services can independently verify the prevout. Outputs carrying inscriptions or Dunes are excluded. The endpoint requires `--index-transactions`; callers must apply any additional protocol reservations owned by downstream indexers before treating an output as spendable. `limit` is bounded to 1–50. `total_count` reports the complete cardinal UTXO count before the response bound and `truncated` states whether additional entries exist; `inventory_complete` describes index completeness and must not be interpreted as an unbounded page.
-
-`GET /api/v1/drc20/tokens?cursor=0&limit=250` returns the DRC-20 deployment catalog with its indexed protocol state: ticker, deploy inscription id and number, decimals, `max_atomic`, `limit_atomic`, `minted_atomic`, `remaining_atomic`, `holder_count`, deployment height and timestamp, deployer, latest mint number, and whether minting is complete. This is deliberately not the transferable inventory: a valid deployment with no outstanding transferable still appears here, so a downstream token index built on this endpoint cannot silently drop real tokens. `limit` is bounded to 1-1000 and `cursor` is a decimal offset over a deterministic ticker order, so a page boundary can neither repeat nor skip a token at a given indexed height. Every quantity is a string, so a `u128` supply is never rounded through a JSON number.
-
-`GET /api/v1/drc20/tokens/{tick}/holders?cursor=0&limit=250` returns holder balances for one ticker in atomic units, split into `overall_atomic`, `transferable_atomic`, and `available_atomic`, with the same bounds and cursor semantics.
-
-Both endpoints require an index built with `--index-drc20`. That flag is recorded when the index is created and cannot add missing historical protocol state to an existing database; an index built without it reports an empty catalog.
-
-`GET /api/v1/dunes/tokens?cursor=0&limit=250` returns the dune catalog with its indexed protocol state: the spaced name, the `block:index` identifier of the etching, number, symbol (null when none was etched), divisibility, etching txid, `supply_atomic`, `premine_atomic`, `mints_atomic`, `burned_atomic`, etched height and timestamp, and whether the terms allow a mint in the next block. Every quantity is a string, so a `u128` supply is never rounded through a JSON number, and `divisibility` is the only rule by which one may be scaled. The same limit bounds and deterministic offset-cursor semantics apply, ordered by etching.
-
-`GET /api/v1/dunes/tokens/{dune}` returns one dune by spaced name or `block:index` identifier, with the same item contract.
-
-Both dune endpoints require an index built with `--index-dunes` and refuse to answer from a database created without it, for the same reason the DRC-20 endpoints do.
-
-`GET /api/v1/capabilities` reports the chain, the indexed checkpoint, and whether this database can answer DRC-20, Dunes, sat and transaction queries. It exists because index feature flags are recorded once, when the database is created, and read back on every later open: adding `--index-drc20` or `--index-transactions` to the startup command afterwards does nothing and cannot backfill historical protocol state. Without an explicit capability report, a database that never indexed DRC-20 answers every DRC-20 query with `200 []`, which downstream is indistinguishable from a chain that genuinely has no tokens. Consumers should also use it to confirm they are talking to the Dogecoin index rather than another chain's ord instance on a neighbouring port.
-
-The DRC-20 and funding endpoints fail closed with an actionable message when the corresponding capability is absent, rather than returning an empty result, and the DRC-20 payloads carry `drc20_index_enabled` so an empty catalog is never ambiguous.
-
-## Continuous verification
-
-CI validates the locked Dogecoin dependency graph, formatting, Clippy, and the maintained protocol compatibility suite in `tests/compatibility.rs` on Linux, macOS, and Windows. The suite exercises Dune identifiers plus Dunestone script encoding and decoding against the pinned `rust-dogecoin` API.
-
-The historical upstream fixture corpus is retained for reference but is not a Cargo test target because it mixes incompatible Bitcoin-era APIs and Bitcoin reward assumptions with this Dogecoin fork. Add new coverage to the compatibility suite or migrate a fixture before making it required in CI.
-
-## TL;DR How to run
-
-### Preqrequisites
-You will have to launch your own Dogecoin node and have it fully synced. You can use the following guide to set up your own Dogecoin node:
-1. Download latest version from [Dogecoin](https://github.com/dogecoin/dogecoin/releases) and install it.
-   1. We have tested and launched the indexer with Dogecoin Core v1.14.8.
-2. Follow the [installation instructions](https://github.com/dogecoin/dogecoin/blob/master/INSTALL.md)
-   1. We started the Dogecoin Core with the following flags:
-      ```shell
-      dogecoind -txindex -rpcuser=foo -rpcpassword=bar -rpcport=22555 -rpcallowip=0.0.0.0/0 -rpcbind=127.0.0.1
-      ```
-   2. Make sure your Dogecoin node is fully synced before starting the indexer.
-   3. ‼️ **IMPORTANT** Ensure to replace `foo` and `bar` with your own username and password. **IMPORTANT** ‼️
-3. Start the indexer with rpc-url pointing to your Dogecoin node and the data-dir pointing to the directory where the indexer should store its data.
+### 1. Run a Dogecoin node
 
 ```shell
+dogecoind -txindex -rpcuser=YOUR_USER -rpcpassword=YOUR_PASSWORD \
+          -rpcport=22555 -rpcbind=127.0.0.1
+```
 
-### Start the ord indexer / server
+`txindex=1` is required. Let the node finish syncing before you start the
+indexer. Dogecoin Core 1.14.8 and 1.14.9 are the versions this fork has been
+run against.
+
+### 2. Build
+
 ```shell
+cargo build --locked --release --bin ord
+```
+
+Use `--locked`: the build patches `bitcoin` and `bitcoincore-rpc` to Dogecoin
+forks, and an unlocked resolve can pick incompatible versions.
+
+### 3. Set the two mandatory environment variables
+
+```shell
+export SUBSIDIES_PATH=$PWD/subsidies.json
+export STARTING_SATS_PATH=$PWD/starting_sats.json
 export RUST_LOG=info
-// Set the path to the subsidies.json and starting_sats.json files
-export SUBSIDIES_PATH=/home/dogeuser/wonky-ord-dogecoin/subsidies.json
-export STARTING_SATS_PATH=/home/dogeuser/wonky-ord-dogecoin/starting_sats.json
-
-# ensure the data directory exists
-mkdir -p /mnt/ord-node/indexer-data-main
-
-# replace YOUR_RPC_URL with the URL of your Dogecoin node like: http://foo:bar@127.0.0.1:22555
-
-// WITH PRE-INDEXED FILE (no drc20, no dunes, just inscriptions, see download above)
-
-// Start Indexing
-ord --rpc-url=http://foo:bar@YOURIP:25555 --first-inscription-height=4609723 --nr-parallel-requests=16 --index=/path/to/doginals-nodrc20-nodunes-redb220.redb index
-
-// Start Indexing + Server
-ord --rpc-url=http://foo:bar@YOURIP:25555 --first-inscription-height=4609723 --nr-parallel-requests=16 --index=/path/to/doginals-nodrc20-nodunes-redb220.redb server --address YOURIP --http-port YOURPORT
-
-// WITHOUT PRE-INDEXED FILE (from scratch, can take many days)
-
-// Start Indexing
-ord --rpc-url=YOUR_RPC_URL --data-dir=/mnt/ord-node/indexer-data-main --nr-parallel-requests=16 --first-inscription-height=4609723 --first-dune-height=5084000 --index-dunes --index-transactions --index-drc20 index
-
-// Start Indexing + Server
-ord --rpc-url=YOUR_RPC_URL --data-dir=/mnt/ord-node/indexer-data-main --nr-parallel-requests=16 --first-inscription-height=4609723 --first-dune-height=5084000 --index-dunes --index-transactions --index-drc20 server
 ```
-`--index-transactions` will store transaction data, this is currently needed for `--index-drc20` and furthermore helps
-for a better performance for the API.
-`--nr-parallel-requests` will configure how many parallel requests while indexing are sent to your RPC Server - 16 is
-recommended for default node settings.
 
-With all settings enabled, the database will currently need around 400gb when fully indexed.
+Dogecoin's first 145,000 blocks paid randomized rewards, so the subsidy
+schedule cannot be computed and is loaded from these files. **The process
+panics without them.** Keep them with the binary: two indexes built from
+different files disagree about ordinal numbers.
 
-### Required env vars
+### 4. Index
 
-On the root level of this repo you'll find a `subsidies.json` and `starting_sats.json` file. When starting ord you will need to set the location of these files to env variables.
-
-Example:
-If your `wonky-ord-dogecoin` dir is `/home/dogeuser/wonky-ord-dogecoin` then set the vars:
-`SUBSIDIES_PATH=/home/dogeuser/wonky-ord-dogecoin/subsidies.json`
-and
-`STARTING_SATS_PATH=/home/dogeuser/wonky-ord-dogecoin/starting_sats.json`.
-
-## Start the ord indexer / server in Docker
-You can use a docker image to run the ord indexer / server.
-
-### Prerequisites Docker
-1. Use ubuntu linux or a similar distribution
-2. Install dogecoind and have it fully synced
-   1See [Dogecoin installation instructions](#preqrequisites)
-3. Install docker and docker-compose (Ubuntu)[https://docs.docker.com/engine/install/ubuntu/]
-4. Clone this repository
-
-### Build the Docker image
 ```shell
-docker build -t verydogelabs/wonky-ord-dogecoin .
+# Inscriptions only
+ord --rpc-url=http://USER:PASSWORD@127.0.0.1:22555 \
+    --data-dir=/data/ord-dogecoin \
+    --first-inscription-height=4609723 \
+    --nr-parallel-requests=16 \
+    index
+
+# Full index: inscriptions, transactions, DRC-20 and Dunes
+ord --rpc-url=http://USER:PASSWORD@127.0.0.1:22555 \
+    --data-dir=/data/ord-dogecoin \
+    --first-inscription-height=4609723 \
+    --first-dune-height=5084000 \
+    --nr-parallel-requests=16 \
+    --index-transactions --index-drc20 --index-dunes \
+    index
 ```
-### Start the ord in a docker container
+
+> **The index feature flags are fixed when the database is created.** Adding
+> `--index-drc20` later does nothing and prints no warning, because the
+> historical protocol state was never parsed. Decide the feature set before the
+> first run.
+
+An index from scratch takes days. See
+[Indexing](docs/src/dogecoin/indexing.md).
+
+### 5. Serve
+
 ```shell
+ord --rpc-url=http://USER:PASSWORD@127.0.0.1:22555 \
+    --data-dir=/data/ord-dogecoin \
+    server --http --address=127.0.0.1 --http-port=8080
+```
+
+`ord server` runs the indexer **and** the HTTP server in one process. The
+default `--address` is `0.0.0.0`; set it explicitly and put a reverse proxy in
+front. There is no authentication and no rate limiting.
+
+Check what the index can answer:
+
+```shell
+curl -s http://127.0.0.1:8080/api/v1/capabilities
+```
+
+```json
+{"chain":"dogecoin","block_count":5764321,"block_hash":"...",
+ "drc20":true,"dunes":true,"sats":false,"transactions":true}
+```
+
+## Docker
+
+```shell
+cp .env.example .env      # then edit RPC_URL and the rest
+docker build -t ord-dogecoin .
 docker compose up -d
 ```
 
-### Stop the ord in a docker container
-When stopping the ord in a container it is important to add a timeout.
-If no timeout is add, the process cannot close the database properly and the next start will take ages or fail.
+**Always stop with a long timeout.** redb must close the database cleanly, and
+a hard kill leaves a database that takes a very long time to reopen:
 
 ```shell
 docker compose stop -t 600
 docker compose down
 ```
 
-## Original README
-Please check the original [README](READMEFROMAPEZORD.md) for more information on how to run `ord` and the required env vars.
+## Starting from a pre-indexed database
+
+Upstream publishes a pre-indexed redb file of roughly 300 GB at
+`https://legacy.trac.network/doginals-nodrc20-nodunes-redb220.redb`. It is
+**inscriptions only**: no DRC-20 and no Dunes data. It is a third-party
+artifact that nothing in this repository verifies, and the parent `wonky-ord`
+client cannot read it, because this fork uses redb 2.4.0.
+
+```shell
+ord --rpc-url=http://USER:PASSWORD@YOUR_NODE:22555 \
+    --first-inscription-height=4609723 \
+    --nr-parallel-requests=16 \
+    --index=/path/to/doginals-nodrc20-nodunes-redb220.redb \
+    index
+```
+
+Confirm what you actually got with `/api/v1/capabilities` before trusting it.
+
+## Dogecoin is not Bitcoin
+
+If you have run `ord` on Bitcoin, these are the differences that will bite you:
+
+- **One minute blocks.** A confirmation here is worth roughly a tenth of a
+  Bitcoin confirmation in elapsed work. Six confirmations is about six minutes.
+- **No Taproot, no witness.** Inscriptions live in `scriptSig` and large ones
+  are chained across consecutive transactions.
+- **No content size limit**, on any network. Doginals are routinely far larger
+  than Bitcoin inscriptions, and the index grows accordingly.
+- **The subsidy schedule is a data file**, not a formula, because Dogecoin's
+  first 145,000 blocks paid randomized rewards. This repository keeps the real
+  per-block rewards; see `src/epoch.rs`.
+- **Base58 addresses only**, with Dogecoin's version bytes.
+- **`ord wallet` does not work.** It requires Bitcoin Taproot descriptor
+  wallets, which Dogecoin Core cannot produce. Treat it as inherited dead code.
+- **No mempool.** Everything served is derived from confirmed blocks only.
+
+The full list, with the code that implements each one, is in
+[Differences from Bitcoin ord](docs/src/dogecoin/differences.md).
+
+## Development
+
+```shell
+cargo clippy --locked -p ord-dogecoin --lib --bin ord \
+  --test compatibility --test authority-api-contract --all-features
+cargo test --locked --test compatibility
+cargo test --locked --test authority-api-contract
+./bin/forbid
+```
+
+CI runs exactly this on Linux and Windows, plus a release build, a CLI smoke
+test, and an mdbook build of `docs/`.
+
+Only `tests/compatibility.rs` and `tests/authority_api_contract.rs` are Cargo
+test targets. The rest of `tests/` is upstream fixture code that does not
+compile against this Dogecoin snapshot and is retained for incremental repair,
+not represented as passing. See [Testing](docs/src/dogecoin/testing.md).
+
+## Contributing, support and security
+
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [SUPPORT.md](SUPPORT.md)
+- [SECURITY.md](SECURITY.md) for vulnerability reports. Do not open a public
+  issue.
+
+## License
+
+[CC0-1.0](LICENSE). Public domain dedication, no warranty.
+
+The upstream Ordinal Theory Handbook that ships in `docs/` and
+[`READMEFROMAPEZORD.md`](READMEFROMAPEZORD.md) are retained from upstream and
+describe ordinal theory on Bitcoin.
