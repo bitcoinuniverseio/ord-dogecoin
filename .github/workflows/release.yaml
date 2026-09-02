@@ -19,10 +19,13 @@ permissions:
 
 jobs:
   route:
-    uses: bitcoinuniverseio/.github-private/.github/workflows/route.yml@develop
+    # This public repository uses its local adapter; GitHub does not expose
+    # private reusable workflows to public callers.
+    uses: ./.github/workflows/route.yml
     secrets: inherit
     with:
       plan: '{"release_2":"heavy"}'
+      config_ref: 032d937e47d5853564358303e6654607162009db
 
   # Linux only. The approved runner architecture is the permanent self-hosted
   # fleet plus WarpBuild BYOC on GCP Spot, and neither offers Windows or macOS
