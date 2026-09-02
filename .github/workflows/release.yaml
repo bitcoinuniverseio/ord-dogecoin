@@ -19,8 +19,9 @@ permissions:
 
 jobs:
   route:
-    # Keep release placement immutable and identical to the CI-reviewed route.
-    uses: bitcoinuniverseio/.github-private/.github/workflows/route.yml@032d937e47d5853564358303e6654607162009db
+    # This public repository uses its local adapter; GitHub does not expose
+    # private reusable workflows to public callers.
+    uses: ./.github/workflows/route.yml
     secrets: inherit
     with:
       plan: '{"release_2":"heavy"}'

@@ -20,9 +20,9 @@ defaults:
 
 jobs:
   route:
-    # Pin both the reusable workflow and its routing configuration to the
-    # reviewed revision that is already serving the production app's gates.
-    uses: bitcoinuniverseio/.github-private/.github/workflows/route.yml@032d937e47d5853564358303e6654607162009db
+    # This public repository uses its local adapter; GitHub does not expose
+    # private reusable workflows to public callers.
+    uses: ./.github/workflows/route.yml
     secrets: inherit
     with:
       plan: '{"lint_2":"standard","test_linux":"heavy","docs_2":"standard","release_2":"heavy"}'
