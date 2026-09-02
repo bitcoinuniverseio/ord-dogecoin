@@ -18,30 +18,26 @@ permissions:
   contents: write
 
 jobs:
+  route:
+    uses: bitcoinuniverseio/.github-private/.github/workflows/route.yml@develop
+    secrets: inherit
+    with:
+      plan: '{"release_2":"heavy"}'
+
+  # Linux only. The approved runner architecture is the permanent self-hosted
+  # fleet plus WarpBuild BYOC on GCP Spot, and neither offers Windows or macOS
+  # capacity. Universe ships the Linux binary.
   release:
+    needs: route
     strategy:
       fail-fast: false
       matrix:
-        target:
-        - aarch64-apple-darwin
-        - x86_64-apple-darwin
-        - x86_64-pc-windows-msvc
-        - x86_64-unknown-linux-gnu
         include:
-        - target: aarch64-apple-darwin
-          os: macos-latest
-          target_rustflags: ''
-        - target: x86_64-apple-darwin
-          os: macos-latest
-          target_rustflags: ''
-        - target: x86_64-pc-windows-msvc
-          os: windows-latest
-          target_rustflags: ''
         - target: x86_64-unknown-linux-gnu
-          os: ubuntu-latest
+          os: linux
           target_rustflags: ''
 
-    runs-on: ${{matrix.os}}
+    runs-on: ${{ fromJSON(needs.route.outputs.targets).release_2 }}
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -53,7 +49,6 @@ jobs:
         targets: ${{ matrix.target }}
 
     - name: Install Linux Dependencies
-      if: ${{ matrix.os == 'ubuntu-latest' }}
       run: |
         sudo apt-get update
         sudo apt-get install musl-tools libssl-dev pkg-config
