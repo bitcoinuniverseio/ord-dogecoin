@@ -25,7 +25,7 @@ jobs:
     uses: ./.github/workflows/route.yml
     secrets: inherit
     with:
-      plan: '{"lint_2":"standard","test_linux":"heavy","docs_2":"standard","release_2":"heavy"}'
+      plan: '{"lint_2":"heavy","test_linux":"heavy","docs_2":"heavy","release_2":"heavy"}'
       config_ref: 032d937e47d5853564358303e6654607162009db
 
   lint:
@@ -49,7 +49,7 @@ jobs:
           bash -n deploy/aws-doge-index/cutover-source.sh
           bash -n deploy/aws-doge-index/validate-index.sh
           bash -n deploy/aws-doge-index/controller/bootstrap.sh
-          python -m py_compile deploy/aws-doge-index/controller/controller.py
+          python3 -m py_compile deploy/aws-doge-index/controller/controller.py
           awk '/doge-index-run <<.RUNNER./{capture=1;next} /^RUNNER$/{capture=0} capture' \
             deploy/aws-doge-index/controller/bootstrap.sh | bash -n
           awk '/doge-index-activate <<.ACTIVATE./{capture=1;next} /^ACTIVATE$/{capture=0} capture' \
@@ -75,7 +75,10 @@ jobs:
             deploy/aws-doge-index/controller/controller.py
 
   test-linux:
-    needs: route
+    # The six ultra runner registrations share one physical VM. Keep Rust
+    # compiles serial so independent logical runners cannot corrupt each
+    # other's shared toolchain and temporary build state under pressure.
+    needs: [route, lint]
     runs-on: ${{ fromJSON(needs.route.outputs.targets).test_linux }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -94,7 +97,7 @@ jobs:
   # and must not carry workspace compiles. Universe runs this indexer on Linux.
 
   docs:
-    needs: route
+    needs: [route, test-linux]
     runs-on: ${{ fromJSON(needs.route.outputs.targets).docs_2 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -107,7 +110,7 @@ jobs:
       - run: mdbook build docs
 
   release:
-    needs: route
+    needs: [route, docs]
     runs-on: ${{ fromJSON(needs.route.outputs.targets).release_2 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
