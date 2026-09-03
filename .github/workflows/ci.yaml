@@ -82,7 +82,7 @@ jobs:
         run: cargo test --locked --test authority-api-contract
 
   # test-windows is removed. The approved runner architecture is the permanent
-  # self-hosted fleet plus WarpBuild BYOC on GCP Spot, and neither offers
+  # self-managed GCP runner platform and the host-pinned local fleet, and neither offers
   # Windows capacity. The self-hosted Windows machines are the CI control plane
   # and must not carry workspace compiles. Universe runs this indexer on Linux.
 
