@@ -18,20 +18,7 @@ permissions:
   contents: write
 
 jobs:
-  route:
-    # This public repository uses its local adapter; GitHub does not expose
-    # private reusable workflows to public callers.
-    uses: ./.github/workflows/route.yml
-    secrets: inherit
-    with:
-      plan: '{"release_2":"heavy"}'
-      config_ref: 032d937e47d5853564358303e6654607162009db
-
-  # Linux only. The approved runner architecture is the permanent self-hosted
-  # fleet plus WarpBuild BYOC on GCP Spot, and neither offers Windows or macOS
-  # capacity. Universe ships the Linux binary.
   release:
-    needs: route
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +27,7 @@ jobs:
           os: linux
           target_rustflags: ''
 
-    runs-on: ${{ fromJSON(needs.route.outputs.targets).release_2 }}
+    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-large]
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
