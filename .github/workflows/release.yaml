@@ -27,7 +27,7 @@ jobs:
           os: linux
           target_rustflags: ''
 
-    runs-on: [self-hosted, linux, x64, universe, gcp, universe-gcp-large]
+    runs-on: [self-hosted, linux, x64, universe-linux]
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
