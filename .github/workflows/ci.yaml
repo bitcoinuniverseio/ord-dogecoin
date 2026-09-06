@@ -20,6 +20,9 @@ defaults:
 
 jobs:
   lint:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -65,10 +68,10 @@ jobs:
             deploy/aws-doge-index/controller/controller.py
 
   test-linux:
-    # The six ultra runner registrations share one physical VM. Keep Rust
-    # compiles serial so independent logical runners cannot corrupt each
-    # other's shared toolchain and temporary build state under pressure.
     needs: [lint]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -81,13 +84,16 @@ jobs:
       - name: Test authority API contract
         run: cargo test --locked --test authority-api-contract
 
-  # test-windows is removed. The approved runner architecture is the permanent
-  # self-managed GCP runner platform and the host-pinned local fleet, and neither offers
-  # Windows capacity. The self-hosted Windows machines are the CI control plane
-  # and must not carry workspace compiles. Universe runs this indexer on Linux.
+  # test-windows is removed. The approved runner architecture is the self-hosted
+  # fleet (Primcast and PowerVPS), and neither offers Windows capacity. The self-hosted
+  # Windows machines are the CI control plane and must not carry workspace compiles.
+  # Universe runs this indexer on Linux.
 
   docs:
     needs: [test-linux]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -101,6 +107,9 @@ jobs:
 
   release:
     needs: [docs]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
