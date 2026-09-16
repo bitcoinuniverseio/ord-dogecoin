@@ -1,0 +1,66 @@
+[Unit]
+Description=Universe Ord Dogecoin DRC-20, Dunes, and transaction index (catch-up build on universe-indexers-1-new)
+Documentation=https://github.com/bitcoinuniverseio/ord-dogecoin
+Requires=universe-dogecoin-rpc-tunnel.service
+After=network-online.target universe-dogecoin-rpc-tunnel.service
+RequiresMountsFor=/data/indexers
+ConditionPathIsDirectory=/data/indexers/data/indexers-c/ord-dogecoin-full
+ConditionPathExists=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb
+
+[Service]
+Type=simple
+User=universe-ord-dogecoin
+Group=universe-ord-dogecoin
+SupplementaryGroups=universe-dogecoin
+WorkingDirectory=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a
+UMask=0027
+Environment=SUBSIDIES_PATH=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/subsidies.json
+Environment=STARTING_SATS_PATH=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/starting_sats.json
+Environment=RUST_LOG=info
+ExecStart=/opt/universe-ord-dogecoin/releases/4584da8c4f8e71780671a0c9674b64a1c70a378a/ord --rpc-url=http://127.0.0.1:22566 --cookie-file=/etc/universe-dogecoin/ord-rpc.cookie --index=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb --first-inscription-height=4609723 --db-cache-size=34359738368 --index-drc20 --index-dunes --index-transactions --nr-parallel-requests=8 server --http --address=127.0.0.1 --http-port=8391
+Restart=on-failure
+RestartSec=30
+KillSignal=SIGINT
+TimeoutStartSec=10min
+TimeoutStopSec=30min
+SendSIGKILL=no
+LimitNOFILE=65536
+MemoryHigh=72G
+MemoryMax=88G
+OOMScoreAdjust=-200
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadOnlyPaths=/etc/universe-dogecoin /opt/universe-ord-dogecoin
+ReadWritePaths=/data/indexers/data/indexers-c/ord-dogecoin-full /var/lib/universe-ord-dogecoin
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
+
+# --- universe-dogecoin-rpc-tunnel.service ---
+[Unit]
+Description=Private loopback tunnel to the shared Universe Dogecoin Core RPC on universe-indexers-1 (ord-dogecoin full index build)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -i /etc/universe/ord-dogecoin-rpc-tunnel-ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -L 127.0.0.1:22566:127.0.0.1:22566 root@159.195.109.76
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

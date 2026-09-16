@@ -1,0 +1,35 @@
+#!/bin/bash
+# Relocate the Dogecoin full ord index build (drc20/dunes/transactions) from
+# universe-indexers-1 to universe-indexers-1-new (OVH). Gated on the destination
+# SMART long tests, then: hot rsync, brief stop of the source service, delta
+# rsync, restart source (keeps serving 8391), start destination builder.
+set -euo pipefail
+LOG=/var/log/universe-indexers1-migration/ord-dogecoin-full-relocate.log
+exec >>"$LOG" 2>&1
+RSH="ssh -i /root/.ssh/universe-indexers-1-to-new -o IdentitiesOnly=yes -o BatchMode=yes"
+D=ubuntu@51.222.43.129
+SRC=/data/indexers-c/ord-dogecoin-full/index-all.redb
+DST=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb
+log(){ printf '%s %s\n' "$(date -Is)" "$*"; }
+# gate on the data disk (sdb3 = /data/indexers); the root disk sda self-test is logged, not awaited
+smart_done(){ $RSH $D 'sudo -n smartctl -a /dev/sdb | grep -q "Self-test routine in progress" && exit 1; exit 0'; }
+log "start"
+while ! smart_done; do log "waiting: destination SMART long tests still running"; sleep 600; done
+log "SMART tests finished; results:"
+$RSH $D 'for d in sda sdb; do sudo -n smartctl -l selftest /dev/$d | sed -n 1,8p; done' || true
+if $RSH $D 'for d in sda sdb; do sudo -n smartctl -l selftest /dev/$d | sed -n 1,8p | grep -qi "failure" && exit 0; done; exit 1'; then
+  log "ABORT: destination SMART self-test reported failure"; exit 1
+fi
+log "hot copy"
+ionice -c3 nice -n 19 rsync -a --inplace --partial --bwlimit=60m --info=progress2,stats2 -e "$RSH" --rsync-path="sudo rsync" "$SRC" "$D:$DST"
+log "hot copy done; stopping source builder for consistent delta"
+systemctl stop universe-ord-dogecoin-full.service
+trap 'systemctl start universe-ord-dogecoin-full.service' EXIT
+sha=$(sha256sum "$SRC" | cut -d" " -f1); log "source sha256=$sha size=$(stat -c %s "$SRC")"
+ionice -c3 nice -n 19 rsync -a --inplace --partial --bwlimit=120m --info=progress2,stats2 -e "$RSH" --rsync-path="sudo rsync" "$SRC" "$D:$DST"
+dsha=$($RSH $D "sudo -n sha256sum $DST | cut -d' ' -f1"); log "dest sha256=$dsha"
+[ "$sha" = "$dsha" ] || { log "ABORT: checksum mismatch"; exit 1; }
+systemctl start universe-ord-dogecoin-full.service; trap - EXIT
+log "source restarted (serving 8391 at stale height until destination reaches tip)"
+$RSH $D "sudo -n chown universe-ord-dogecoin:universe-ord-dogecoin $DST; sudo -n chmod 640 $DST; sudo -n systemctl start universe-ord-dogecoin-full.service; sleep 30; sudo -n journalctl -u universe-ord-dogecoin-full -n 5 -o cat"
+log "destination builder started"
