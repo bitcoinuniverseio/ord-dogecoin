@@ -1,0 +1,15 @@
+[Unit]
+Description=Private loopback tunnel from indexers-2 to the shared Universe Dogecoin Core RPC on universe-indexers-1 (ord-dogecoin authority)
+Documentation=https://github.com/bitcoinuniverseio/ord-dogecoin
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -i /etc/universe/ord-dogecoin-rpc-tunnel-ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -L 127.0.0.1:22566:127.0.0.1:22566 root@159.195.109.76
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
