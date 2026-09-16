@@ -30,7 +30,7 @@ One shared Dogecoin Core, two ord indexes, three hosts. No third-party data.
 | Index | `/var/lib/universe-ord-0.29/ord-dogecoin/doginals.redb` |
 | RPC | `universe-dogecoin-rpc-tunnel.service`: `ssh -L 127.0.0.1:22566` to indexers-1, key `/etc/universe/ord-dogecoin-rpc-tunnel-ed25519`, authorized on indexers-1 with `from="152.53.92.251",restrict,port-forwarding,permitopen="127.0.0.1:22566"` |
 | Interhost | `universe-ord-dogecoin-peer.service` (socat, bind 152.53.92.251:8390, `range=159.195.109.76/32`) |
-| Consumer | indexers-1 `universe-ord-dogecoin-remote.socket` on 127.0.0.1:8390 |
+| Consumers | indexers-1 `universe-ord-dogecoin-remote.socket` on 127.0.0.1:8390; Hostinger `universe-indexer-01-tunnel@doginals` (loopback 38390 -> indexers-1:8390, key permitopen 8390) feeds `UNIVERSE_MEDIA_DOGINALS_URL` for the public and wallet APIs (the old PowerVPS-bound `universe-doginals-tunnel` is disabled) |
 | Verify | `/api/v1/inscriptions?limit=1` -> `block_count`, `block_hash`, `inventory_complete:true`; anchors inscription 100 at 4609847 and 178908755 at 5782326 (`?cursor=<n>&limit=1`) |
 
 `universe-dogecoin.service` on indexers-2 is disabled on purpose. Its chain data
