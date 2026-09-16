@@ -11,7 +11,8 @@ D=ubuntu@51.222.43.129
 SRC=/data/indexers-c/ord-dogecoin-full/index-all.redb
 DST=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb
 log(){ printf '%s %s\n' "$(date -Is)" "$*"; }
-smart_done(){ $RSH $D 'for d in sda sdb; do sudo -n smartctl -a /dev/$d | grep -q "Self-test routine in progress" && exit 1; done; exit 0'; }
+# gate on the data disk (sdb3 = /data/indexers); the root disk sda self-test is logged, not awaited
+smart_done(){ $RSH $D 'sudo -n smartctl -a /dev/sdb | grep -q "Self-test routine in progress" && exit 1; exit 0'; }
 log "start"
 while ! smart_done; do log "waiting: destination SMART long tests still running"; sleep 600; done
 log "SMART tests finished; results:"
