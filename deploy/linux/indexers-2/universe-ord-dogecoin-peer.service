@@ -1,0 +1,20 @@
+[Unit]
+Description=Universe Ord Dogecoin (doginals authority) peer-restricted interhost endpoint
+Requires=universe-ord-dogecoin.service
+After=network-online.target universe-ord-dogecoin.service
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+Type=simple
+ExecStart=/usr/bin/socat TCP4-LISTEN:8390,bind=152.53.92.251,fork,reuseaddr,range=159.195.109.76/32 TCP4:127.0.0.1:8390
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
