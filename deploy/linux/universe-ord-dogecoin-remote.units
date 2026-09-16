@@ -1,0 +1,26 @@
+[Unit]
+Description=Universe Ord Dogecoin (doginals authority on universe-indexers-2) remote endpoint socket
+After=network-online.target
+Wants=network-online.target
+
+[Socket]
+ListenStream=127.0.0.1:8390
+NoDelay=true
+
+[Install]
+WantedBy=sockets.target
+
+[Unit]
+Description=Universe Ord Dogecoin (doginals authority) forwarder to universe-indexers-2
+Requires=universe-ord-dogecoin-remote.socket
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 152.53.92.251:8390
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_UNIX

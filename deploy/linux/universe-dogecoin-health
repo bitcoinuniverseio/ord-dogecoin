@@ -7,11 +7,16 @@ HISTORY_FILE=${HISTORY_FILE:-$STATE_DIR/history.jsonl}
 DOGECOIN_CLI=${DOGECOIN_CLI:-/opt/universe-dogecoin/dogecoin-1.14.9/bin/dogecoin-cli}
 DOGECOIN_DATADIR=${DOGECOIN_DATADIR:-/data/indexers-b/dogecoin}
 DOGECOIN_CONF=${DOGECOIN_CONF:-/etc/universe-dogecoin/dogecoin.conf}
+ORD_SERVICE=${ORD_SERVICE:-universe-ord-dogecoin.service}
 ORD_URL=${ORD_URL:-http://127.0.0.1:8390}
 TAP_URL=${TAP_URL:-https://127.0.0.1:3013}
 TAP_BEARER_TOKEN=${TAP_API_TOKEN:-${TOKEN_EXPLORER_BEARER_TOKEN:-}}
 ORD_DB=${ORD_DB:-/data/indexers-b/ord-dogecoin/doginals.redb}
 FULL_ORD_URL=${FULL_ORD_URL:-http://127.0.0.1:8391}
+# Doginals authority (ord-accel-v9 on universe-indexers-2, reached over the
+# loopback forwarder universe-ord-dogecoin-remote.socket).
+DOGINALS_URL=${DOGINALS_URL:-http://127.0.0.1:8390}
+MAX_DOGINALS_LAG_BLOCKS=${MAX_DOGINALS_LAG_BLOCKS:-30}
 FULL_ORD_DB=${FULL_ORD_DB:-/data/indexers-c/ord-dogecoin-full/index-all.redb}
 TAP_DB=${TAP_DB:-/data/indexers-b/doge-tap/live/index-doge-tap.sqlite}
 MAX_ORD_LAG_BLOCKS=${MAX_ORD_LAG_BLOCKS:-100}
@@ -37,7 +42,7 @@ service_state() {
 }
 
 core_state=$(service_state universe-dogecoin.service)
-ord_state=$(service_state universe-ord-dogecoin.service)
+ord_state=$(service_state "$ORD_SERVICE")
 tap_state=$(service_state universe-index-doge-tap.service)
 [[ $core_state == active ]] || problem core_service "state=$core_state"
 [[ $ord_state == active ]] || problem ord_service "state=$ord_state"
@@ -159,6 +164,34 @@ elif [[ $REQUIRE_FULL_INDEX == 1 ]]; then
   problem full_ord_service "state=$full_state"
 fi
 
+doginals_json=$(curl -fsS --max-time 20 "$DOGINALS_URL/api/v1/inscriptions?limit=1" 2>/dev/null || true)
+doginals_height=null
+doginals_hash=null
+doginals_lag=null
+doginals_identity=null
+doginals_complete=null
+if jq -e '.chain == "dogecoin" and (.block_count | type == "number") and (.block_hash | type == "string")' >/dev/null 2>&1 <<<"$doginals_json"; then
+  doginals_height=$(( $(jq -r '.block_count' <<<"$doginals_json") - 1 ))
+  doginals_hash=$(jq -r '.block_hash' <<<"$doginals_json")
+  doginals_complete=$(jq -r 'if .inventory_complete == true then true else false end' <<<"$doginals_json")
+  [[ $doginals_complete == true ]] || problem doginals_inventory "inventory_complete=$doginals_complete"
+  if [[ $node_height != null ]]; then
+    doginals_lag=$((node_height - doginals_height))
+    if (( doginals_lag < 0 || doginals_lag > MAX_DOGINALS_LAG_BLOCKS )); then
+      problem doginals_lag "node=$node_height doginals=$doginals_height lag=$doginals_lag"
+    fi
+    doginals_node_hash=$($DOGECOIN_CLI -datadir="$DOGECOIN_DATADIR" -conf="$DOGECOIN_CONF" getblockhash "$doginals_height" 2>/dev/null || true)
+    if [[ $doginals_node_hash == "$doginals_hash" ]]; then
+      doginals_identity=true
+    else
+      doginals_identity=false
+      problem doginals_chain_identity "doginals=$doginals_hash core=$doginals_node_hash height=$doginals_height"
+    fi
+  fi
+else
+  problem doginals_api "inventory probe failed at $DOGINALS_URL"
+fi
+
 tap_ready_json=$(curl -kfsS --max-time 20 "$TAP_URL/ready" 2>/dev/null || true)
 tap_ready=$(jq -r 'if .ready == true or .status == "ready" then true else false end' <<<"$tap_ready_json" 2>/dev/null || true)
 [[ $tap_ready == true || $tap_ready == false ]] || tap_ready=false
@@ -199,10 +232,11 @@ record=$(jq -n \
   --argjson ordBlockCount "$ord_block_count" --argjson ordHeight "$ord_height" --arg ordHash "$ord_hash" --argjson lag "$lag" --argjson identity "$chain_identity" --argjson rate "$ord_rate_blocks_per_hour" \
   --argjson drc20 "$ord_drc20" --argjson dunes "$ord_dunes" --argjson transactions "$ord_transactions" --arg lastAdvanceAt "$last_ord_advance_at" \
   --arg fullState "$full_state" --argjson fullHeight "$full_height" --arg fullHash "$full_hash" --argjson fullLag "$full_lag" --argjson fullIdentity "$full_identity" --argjson fullDrc20 "$full_drc20" --argjson fullDunes "$full_dunes" --argjson fullTransactions "$full_transactions" --argjson fullDbSize "$full_db_size" \
+  --argjson doginalsHeight "$doginals_height" --arg doginalsHash "$doginals_hash" --argjson doginalsLag "$doginals_lag" --argjson doginalsIdentity "$doginals_identity" --argjson doginalsComplete "$doginals_complete" \
   --argjson tapReady "$tap_ready" --argjson tapStatus "$tap_status" \
   --argjson ordDbSize "$ord_db_size" --arg ordDbMtime "$ord_db_mtime" --argjson tapDbSize "$tap_db_size" \
   --argjson ordFree "$ord_free" --argjson buildFree "$build_free" --argjson problems "$problems_json" \
-  '{checkedAt:$checkedAt,healthy:$healthy,services:{core:$coreState,ord:$ordState,fullOrd:$fullState,tap:$tapState},core:{height:$nodeHeight,headers:$nodeHeaders,bestHash:$nodeHash,initialBlockDownload:$nodeIbd},ord:{blockCount:$ordBlockCount,height:$ordHeight,hash:$ordHash,lag:$lag,chainIdentityAgrees:$identity,drc20:$drc20,dunes:$dunes,transactions:$transactions,lastAdvanceAt:$lastAdvanceAt,rateBlocksPerHour:$rate,databaseSize:$ordDbSize,databaseMtime:$ordDbMtime},fullOrd:{height:$fullHeight,hash:$fullHash,lag:$fullLag,chainIdentityAgrees:$fullIdentity,drc20:$fullDrc20,dunes:$fullDunes,transactions:$fullTransactions,databaseSize:$fullDbSize},tap:{ready:$tapReady,databaseSize:$tapDbSize,status:$tapStatus},storage:{ordVolumeFreeBytes:$ordFree,buildVolumeFreeBytes:$buildFree},problems:$problems}')
+  '{checkedAt:$checkedAt,healthy:$healthy,services:{core:$coreState,ord:$ordState,fullOrd:$fullState,tap:$tapState},core:{height:$nodeHeight,headers:$nodeHeaders,bestHash:$nodeHash,initialBlockDownload:$nodeIbd},ord:{blockCount:$ordBlockCount,height:$ordHeight,hash:$ordHash,lag:$lag,chainIdentityAgrees:$identity,drc20:$drc20,dunes:$dunes,transactions:$transactions,lastAdvanceAt:$lastAdvanceAt,rateBlocksPerHour:$rate,databaseSize:$ordDbSize,databaseMtime:$ordDbMtime},fullOrd:{height:$fullHeight,hash:$fullHash,lag:$fullLag,chainIdentityAgrees:$fullIdentity,drc20:$fullDrc20,dunes:$fullDunes,transactions:$fullTransactions,databaseSize:$fullDbSize},doginals:{height:$doginalsHeight,hash:$doginalsHash,lag:$doginalsLag,chainIdentityAgrees:$doginalsIdentity,inventoryComplete:$doginalsComplete},tap:{ready:$tapReady,databaseSize:$tapDbSize,status:$tapStatus},storage:{ordVolumeFreeBytes:$ordFree,buildVolumeFreeBytes:$buildFree},problems:$problems}')
 
 tmp="$STATE_FILE.tmp"
 printf '%s\n' "$record" > "$tmp"
