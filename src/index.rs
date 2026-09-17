@@ -950,6 +950,25 @@ impl Index {
     Ok(result)
   }
 
+  /// `Some(true)` when the output is unspent, `Some(false)` when its
+  /// transaction is in the active chain and the output is spent, `None` when
+  /// the index does not know the transaction at all.
+  pub(crate) fn is_output_unspent(&self, outpoint: OutPoint) -> Result<Option<bool>> {
+    let rtx = self.database.begin_read()?;
+    let unspent = rtx
+      .open_table(OUTPOINT_TO_VALUE)?
+      .get(&outpoint.store())?
+      .is_some();
+    if unspent {
+      return Ok(Some(true));
+    }
+    if self.is_transaction_in_active_chain(outpoint.txid)? {
+      Ok(Some(false))
+    } else {
+      Ok(None)
+    }
+  }
+
   pub(crate) fn get_account_outputs(&self, address: String) -> Result<Vec<OutPoint>> {
     let mut result: Vec<OutPoint> = Vec::new();
 

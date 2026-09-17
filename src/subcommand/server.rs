@@ -17,7 +17,7 @@ use {
       Drc20TransactionDecisions, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionDetail, InscriptionInventory, InscriptionInventoryItem,
-      InventoryLocation, resolved_content_metadata,
+      InventoryLocation, OutputDetail, OutputDuneBalance, resolved_content_metadata,
     },
     drc20::{script_key::ScriptKey, OperationDecision, Tick, DRC20_RULESET},
     page_config::PageConfig,
@@ -346,6 +346,7 @@ impl Server {
           "/api/v1/inscriptions/:inscription_id",
           get(Self::inscription_detail),
         )
+        .route("/api/v1/outputs/:outpoint", get(Self::output_detail))
         .route(
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
@@ -634,11 +635,104 @@ impl Server {
     Redirect::to(&format!("/sat/{sat}"))
   }
 
+  fn output_not_found_json() -> Response {
+    (
+      StatusCode::NOT_FOUND,
+      Json(json!({ "error": "output not found" })),
+    )
+      .into_response()
+  }
+
+  async fn output_detail(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(outpoint): Path<String>,
+  ) -> ServerResult<Response> {
+    Self::output_detail_response(&page_config, &index, &outpoint)
+  }
+
+  fn output_detail_response(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: &str,
+  ) -> ServerResult<Response> {
+    let Ok(outpoint) = OutPoint::from_str(outpoint) else {
+      return Ok(Self::output_not_found_json());
+    };
+    match Self::output_detail_for(page_config, index, outpoint)? {
+      Some(detail) => Ok(Json(detail).into_response()),
+      None => Ok(Self::output_not_found_json()),
+    }
+  }
+
+  fn output_detail_for(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: OutPoint,
+  ) -> ServerResult<Option<OutputDetail>> {
+    let Some(transaction) = index.get_transaction(outpoint.txid)? else {
+      return Ok(None);
+    };
+    let Some(output) = transaction.output.into_iter().nth(outpoint.vout as usize) else {
+      return Ok(None);
+    };
+    let Some(unspent) = index.is_output_unspent(outpoint)? else {
+      return Ok(None);
+    };
+    let sat_ranges = match index.list(outpoint)? {
+      Some(List::Unspent(ranges)) => Some(ranges),
+      _ => None,
+    };
+    let inscriptions = index
+      .get_inscriptions_on_output(outpoint)?
+      .into_iter()
+      .map(|id| id.to_string())
+      .collect();
+    let runes = index
+      .get_dune_balances_for_outpoint(outpoint)?
+      .into_iter()
+      .map(|(dune, pile)| {
+        (
+          dune.to_string(),
+          OutputDuneBalance {
+            amount: pile.amount,
+            divisibility: pile.divisibility,
+            symbol: pile.symbol,
+          },
+        )
+      })
+      .collect();
+    Ok(Some(OutputDetail {
+      chain: "dogecoin",
+      network: page_config.chain.to_string(),
+      outpoint: outpoint.to_string(),
+      address: page_config
+        .chain
+        .address_from_script(&output.script_pubkey)
+        .ok()
+        .map(|address| address.to_string()),
+      indexed: true,
+      inscriptions,
+      runes,
+      sat_ranges,
+      script_pubkey: output.script_pubkey.asm(),
+      spent: !unspent,
+      transaction: outpoint.txid.to_string(),
+      value: output.value,
+    }))
+  }
+
   async fn output(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
-    Path(outpoint): Path<OutPoint>,
-  ) -> ServerResult<PageHtml<OutputHtml>> {
+    Path(outpoint): Path<String>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      return Self::output_detail_response(&page_config, &index, &outpoint);
+    }
+    let outpoint = OutPoint::from_str(&outpoint)
+      .map_err(|err| ServerError::BadRequest(format!("invalid outpoint: {err}")))?;
     let list = index.list(outpoint)?;
 
     let output = if outpoint == OutPoint::null() {
@@ -677,7 +771,8 @@ impl Server {
         output,
         dunes,
       }
-      .page(page_config),
+      .page(page_config)
+      .into_response(),
     )
   }
 
