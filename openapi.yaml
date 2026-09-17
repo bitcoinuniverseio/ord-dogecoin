@@ -162,6 +162,42 @@ paths:
           description: Invalid limit, or SUBSIDIES_PATH is not set
         '404':
           description: The index has no chain tip yet
+  /api/v1/inscriptions/{inscription_id}:
+    get:
+      summary: Get one inscription in the upstream ord JSON layout
+      description: >-
+        The same document GET /inscription/{inscription_id} answers under
+        Accept: application/json, always as JSON. Field names follow upstream
+        ord so a consumer written against it reads this fork unchanged; every
+        integer is an exact JSON number (a u64 is printed without rounding).
+        charms, parents, child_count, rune and metaprotocol are present for
+        layout compatibility and always empty: this fork does not index them.
+      operationId: getInscriptionDetail
+      parameters:
+        - name: inscription_id
+          in: path
+          required: true
+          description: Inscription ID (txid followed by i and the index)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The inscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InscriptionDetail'
+        '404':
+          description: No inscription with that id, or a malformed id
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    enum: ['inscription not found']
   /api/v1/drc20/transferables:
     get:
       summary: List every outstanding DRC-20 transferable inscription
@@ -1023,6 +1059,12 @@ paths:
   /inscription/{inscription_id}:
     get:
       summary: Get inscription details
+      description: >-
+        HTML for browsers. With Accept: application/json the response is the
+        InscriptionDetail document of /api/v1/inscriptions/{inscription_id},
+        as upstream ord negotiates it, and an unknown id is a JSON 404.
+        /shibescription/{inscription_id} is an alias with the same behaviour.
+        The legacy ?json=true query keeps its wonky-ord shape.
       operationId: getInscription
       parameters:
         - name: inscription_id
@@ -1031,10 +1073,16 @@ paths:
           description: Inscription ID
           schema:
             type: string
+        - name: Accept
+          in: header
+          required: false
+          description: application/json selects the upstream ord JSON layout
+          schema:
+            type: string
         - name: json
           in: query
           required: false
-          description: Return response in JSON format
+          description: Return the legacy wonky-ord JSON shape
           schema:
             type: boolean
       responses:
@@ -1046,7 +1094,9 @@ paths:
                 type: string
             application/json:
               schema:
-                type: object
+                $ref: '#/components/schemas/InscriptionDetail'
+        '404':
+          description: Unknown inscription; JSON under Accept application/json
 
   /inscriptions:
     get:
@@ -1823,6 +1873,114 @@ components:
             - $ref: '#/components/schemas/InventoryLocation'
           nullable: true
           description: Null when the inscription sits on lost value
+    InscriptionDetail:
+      type: object
+      description: >-
+        One inscription in the field layout upstream ord answers for
+        GET /inscription/{id} under Accept application/json. Integers are
+        exact JSON numbers.
+      required:
+        - chain
+        - network
+        - id
+        - number
+        - address
+        - content_type
+        - content_length
+        - height
+        - fee
+        - value
+        - sat
+        - satpoint
+        - output
+        - genesis_transaction
+        - timestamp
+        - charms
+        - parents
+        - child_count
+        - rune
+        - metaprotocol
+        - previous
+        - next
+      properties:
+        chain:
+          type: string
+          enum: [dogecoin]
+        network:
+          type: string
+          description: mainnet, testnet, regtest or signet, as /api/v1/capabilities reports it
+        id:
+          type: string
+        number:
+          type: integer
+          format: int64
+        address:
+          type: string
+          nullable: true
+          description: Null when the current output is not an address
+        content_type:
+          type: string
+          nullable: true
+          description: Resolved through the delegate, when there is one
+        content_length:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          description: Genesis height
+        fee:
+          type: integer
+          format: int64
+          description: Genesis fee in koinu
+        value:
+          type: integer
+          format: int64
+          description: Value of the current output in koinu
+        sat:
+          type: integer
+          format: int64
+          nullable: true
+          description: Null without --index-sats
+        satpoint:
+          type: string
+          description: txid:vout:offset of the current location
+        output:
+          type: string
+          description: txid:vout of the current output
+        genesis_transaction:
+          type: string
+        timestamp:
+          type: integer
+          description: Unix seconds of the genesis block
+        charms:
+          type: array
+          items:
+            type: string
+          description: Always empty; not indexed by this fork
+        parents:
+          type: array
+          items:
+            type: string
+          description: Always empty; not indexed by this fork
+        child_count:
+          type: integer
+          description: Always 0; not indexed by this fork
+        rune:
+          type: string
+          nullable: true
+          description: Always null; not indexed by this fork
+        metaprotocol:
+          type: string
+          nullable: true
+          description: Always null; not indexed by this fork
+        previous:
+          type: string
+          nullable: true
+          description: Id of the inscription numbered one lower, or null
+        next:
+          type: string
+          nullable: true
+          description: Id of the inscription numbered one higher, or null
     Drc20TokenInventoryItem:
       type: object
       required:
