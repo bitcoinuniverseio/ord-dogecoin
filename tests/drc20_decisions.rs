@@ -64,6 +64,9 @@ struct Chain {
   rpc: Handle,
   tempdir: TempDir,
   cookie: PathBuf,
+  /// Select the chain with the `--regtest` shorthand, as the deployment units
+  /// do, instead of `--chain=regtest`.
+  shorthand_flag: bool,
 }
 
 impl Chain {
@@ -78,13 +81,18 @@ impl Chain {
       rpc,
       tempdir,
       cookie,
+      shorthand_flag: false,
     }
   }
 
   fn ord(&self) -> Command {
     let mut command = Command::new(executable_path("ord"));
     command
-      .arg("--chain=regtest")
+      .arg(if self.shorthand_flag {
+        "--regtest"
+      } else {
+        "--chain=regtest"
+      })
       .arg("--rpc-url")
       .arg(self.rpc.url())
       .arg("--data-dir")
@@ -673,4 +681,145 @@ fn a_database_without_the_drc20_index_reports_decisions_as_disabled() {
 
   let (status, _) = server.json(&format!("/api/v1/drc20/operations?txid={deploy}"));
   assert_eq!(status, 400);
+}
+
+/// The ledger keys holders by address string. On regtest and testnet that
+/// string must carry the prefix of the indexed chain (m/n), not the mainnet D
+/// prefix: the explorer validates every address against the network of the
+/// request and would otherwise reject the deployer and every holder.
+#[test]
+fn holder_addresses_carry_the_prefix_of_the_indexed_chain() {
+  let mut chain = Chain::new();
+  chain.shorthand_flag = true;
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(3);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x11; 20]).unwrap());
+  let expected = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+  assert!(
+    expected.starts_with('m') || expected.starts_with('n'),
+    "{expected}"
+  );
+
+  let deploy = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    script_sig: drc20(
+      r#"{"p":"drc-20","op":"deploy","tick":"abcd","max":"1000","lim":"10","dec":"0"}"#,
+    ),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  let mint = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(2, 0, 0)],
+    script_sig: drc20(r#"{"p":"drc-20","op":"mint","tick":"abcd","amt":"10","note":"valid-mint"}"#),
+    output_script: holder,
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(6);
+  assert_eq!(server.decision(deploy)["verdict"], "accepted");
+  assert_eq!(server.decision(mint)["verdict"], "accepted");
+
+  let (status, token) = server.json("/api/v1/drc20/tokens/abcd");
+  assert_eq!(status, 200, "{token}");
+  assert_eq!(token["token"]["deployed_by"], expected, "{token}");
+
+  let (status, holders) = server.json("/api/v1/drc20/tokens/abcd/holders");
+  assert_eq!(status, 200, "{holders}");
+  let holders = holders["holders"].as_array().unwrap();
+  assert_eq!(holders.len(), 1, "{holders:?}");
+  assert_eq!(holders[0]["address"], expected);
+  assert_eq!(holders[0]["overall_atomic"], "10");
+
+  // The same address, queried with its own prefix, answers the balance.
+  let (status, balance) = server.json(&format!("/drc20/balance/{expected}"));
+  assert_eq!(status, 200, "{balance}");
+}
+
+/// A transfer inscription spent to another address moves the balance on
+/// regtest exactly as it does on mainnet: the owner recorded at inscribe time
+/// is matched at spend time even though the stored owner round-trips through
+/// an address string whose version byte the parser tags as testnet.
+#[test]
+fn a_transfer_spent_to_another_address_moves_the_balance_on_regtest() {
+  let mut chain = Chain::new();
+  chain.shorthand_flag = true;
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(3);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x11; 20]).unwrap());
+  let other = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x22; 20]).unwrap());
+  let holder_address = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+  let other_address = bitcoin::Address::from_script(&other, Network::Regtest)
+    .unwrap()
+    .to_string();
+
+  rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    script_sig: drc20(
+      r#"{"p":"drc-20","op":"deploy","tick":"abcd","max":"1000","lim":"10","dec":"0"}"#,
+    ),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(2, 0, 0)],
+    script_sig: drc20(r#"{"p":"drc-20","op":"mint","tick":"abcd","amt":"10","note":"valid-mint"}"#),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  // Block 6: inscribe a transfer of 4 to the holder's own output.
+  let inscribe_transfer = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(3, 0, 0)],
+    script_sig: drc20(
+      r#"{"p":"drc-20","op":"transfer","tick":"abcd","amt":"4","note":"to-spend"}"#,
+    ),
+    output_script: holder,
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  // Block 7: spend the transfer inscription's output to the other address.
+  let spend = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(6, 1, 0)],
+    output_script: other,
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(8);
+  assert_eq!(server.decision(inscribe_transfer)["verdict"], "accepted");
+  let (status, decisions) = server.json(&format!("/api/v1/drc20/operations?txid={spend}"));
+  assert_eq!(status, 200, "{decisions}");
+  let decision = &decisions["decisions"][0];
+  assert_eq!(decision["operation"], "transfer", "{decisions}");
+  assert_eq!(decision["verdict"], "accepted", "{decisions}");
+
+  let (_, holders) = server.json("/api/v1/drc20/tokens/abcd/holders");
+  let holders = holders["holders"].as_array().unwrap();
+  let balance = |address: &str| {
+    holders
+      .iter()
+      .find(|h| h["address"] == address)
+      .map(|h| h["overall_atomic"].clone())
+  };
+  assert_eq!(
+    balance(&holder_address),
+    Some(Value::from("6")),
+    "{holders:?}"
+  );
+  assert_eq!(
+    balance(&other_address),
+    Some(Value::from("4")),
+    "{holders:?}"
+  );
 }
