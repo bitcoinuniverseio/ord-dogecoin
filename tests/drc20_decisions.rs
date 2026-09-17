@@ -64,6 +64,9 @@ struct Chain {
   rpc: Handle,
   tempdir: TempDir,
   cookie: PathBuf,
+  /// Select the chain with the `--regtest` shorthand, as the deployment units
+  /// do, instead of `--chain=regtest`.
+  shorthand_flag: bool,
 }
 
 impl Chain {
@@ -78,13 +81,18 @@ impl Chain {
       rpc,
       tempdir,
       cookie,
+      shorthand_flag: false,
     }
   }
 
   fn ord(&self) -> Command {
     let mut command = Command::new(executable_path("ord"));
     command
-      .arg("--chain=regtest")
+      .arg(if self.shorthand_flag {
+        "--regtest"
+      } else {
+        "--chain=regtest"
+      })
       .arg("--rpc-url")
       .arg(self.rpc.url())
       .arg("--data-dir")
@@ -681,7 +689,8 @@ fn a_database_without_the_drc20_index_reports_decisions_as_disabled() {
 /// request and would otherwise reject the deployer and every holder.
 #[test]
 fn holder_addresses_carry_the_prefix_of_the_indexed_chain() {
-  let chain = Chain::new();
+  let mut chain = Chain::new();
+  chain.shorthand_flag = true;
   let rpc = &chain.rpc;
   rpc.mine_blocks(3);
 
