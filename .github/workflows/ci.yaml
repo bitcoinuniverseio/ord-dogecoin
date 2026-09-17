@@ -105,12 +105,22 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install documentation toolchain
         run: |
-          cargo install --locked mdbook --version 0.4.52
-          cargo install --locked mdbook-linkcheck --version 0.7.7
           # cargo install lands in $CARGO_HOME/bin, which the self-hosted
           # runner does not carry on PATH unless the toolchain action had to
           # install rustup itself.
-          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$bin" >> "$GITHUB_PATH"
+          export PATH="$bin:$PATH"
+          # The runners share one CARGO_HOME, and the host reclaims stale
+          # /tmp/cargo-install* directories while a build may still be using
+          # them, which fails the install and removes the previous binary.
+          # Only compile when the pinned version is not already there.
+          if [ "$(mdbook --version 2>/dev/null)" != "mdbook v0.4.52" ]; then
+            cargo install --locked mdbook --version 0.4.52
+          fi
+          if ! command -v mdbook-linkcheck >/dev/null 2>&1; then
+            cargo install --locked mdbook-linkcheck --version 0.7.7
+          fi
       - run: mdbook build docs
 
   release:
