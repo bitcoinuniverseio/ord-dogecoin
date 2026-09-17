@@ -573,7 +573,7 @@ impl<'index> Updater<'_> {
         )?
         .index_block(
           BlockContext {
-            network: Network::Bitcoin,
+            network: index.chain.network(),
             blockheight: u64::from(self.height),
             blockhash: block.header.block_hash(),
             blocktime: block.header.time,
