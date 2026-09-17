@@ -107,6 +107,10 @@ jobs:
         run: |
           cargo install --locked mdbook --version 0.4.52
           cargo install --locked mdbook-linkcheck --version 0.7.7
+          # cargo install lands in $CARGO_HOME/bin, which the self-hosted
+          # runner does not carry on PATH unless the toolchain action had to
+          # install rustup itself.
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
       - run: mdbook build docs
 
   release:
