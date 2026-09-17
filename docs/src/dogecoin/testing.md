@@ -4,8 +4,8 @@ Testing
 What is actually a test target
 ------------------------------
 
-`Cargo.toml` sets `autotests = false` and declares exactly two integration test
-targets:
+`Cargo.toml` sets `autotests = false` and declares exactly three integration
+test targets:
 
 ```toml
 [[test]]
@@ -15,6 +15,10 @@ path = "tests/compatibility.rs"
 [[test]]
 name = "authority-api-contract"
 path = "tests/authority_api_contract.rs"
+
+[[test]]
+name = "drc20-decisions"
+path = "tests/drc20_decisions.rs"
 ```
 
 The `[lib]` section sets `test = false`, so the inline `#[cfg(test)]` modules
@@ -22,7 +26,7 @@ scattered through `src/` are **not compiled or run** either.
 
 Everything else under `tests/` is inherited upstream fixture code that is not
 built. Be precise about this: 29 files under `tests/` looks like broad
-coverage, and two of them are the coverage.
+coverage, and three of them are the coverage.
 
 Running the suite
 -----------------
@@ -30,13 +34,18 @@ Running the suite
 ```shell
 cargo test --locked --test compatibility
 cargo test --locked --test authority-api-contract
+cargo test --locked --test drc20-decisions
 ```
 
-Both are what CI runs, on Linux and on Windows. The full lint pass:
+All three are what CI runs on Linux. The last one drives the built `ord`
+binary against the in-process regtest node from `test-bitcoincore-rpc`, so
+it needs `SUBSIDIES_PATH` and `STARTING_SATS_PATH` to resolve; the test
+points them at the repository's `subsidies.json` and `starting_sats.json`
+itself. The full lint pass:
 
 ```shell
 cargo clippy --locked -p ord-dogecoin --lib --bin ord \
-  --test compatibility --test authority-api-contract --all-features
+  --test compatibility --test authority-api-contract --test drc20-decisions \n  --all-features
 rustfmt --check tests/compatibility.rs
 ./bin/forbid
 ```
@@ -64,7 +73,7 @@ a pinned dependency moves:
 What `tests/authority_api_contract.rs` covers
 ---------------------------------------------
 
-Fourteen tests over the `/api/v1` JSON contract. They exist because these
+Fifteen tests over the `/api/v1` JSON contract. They exist because these
 payloads are consumed by services that settle value, so a shape change is a
 production incident, not a cosmetic one.
 
@@ -84,22 +93,44 @@ They assert, among other things:
 - Inscription inventory carries subsidy provenance.
 - A dune definition reports its symbol without inventing one.
 
+What `tests/drc20_decisions.rs` covers
+--------------------------------------
+
+Six end-to-end tests. Each one mines regtest blocks on the in-process test
+node, carries DRC-20 operations in real script_sig inscriptions, indexes
+them with the production binary (`ord index` or `ord server` with
+`--index-drc20 --index-transactions`) and reads the verdicts back over
+`/api/v1/drc20/operations`. They prove the ledger, the retained decision
+and the HTTP contract together.
+
+| Test | What it protects |
+| --- | --- |
+| `ledger_verdicts_are_retained_per_operation_with_their_block` | Valid deploy accepted; mint over the limit, mint of an undeployed ticker, duplicate deploy and inscribe-transfer beyond balance each rejected with the protocol reason; a plain inscription inside coverage is `not-a-drc20-operation`; an unknown inscription is 404; the ledger agrees with the verdicts. |
+| `every_operation_in_one_transaction_is_a_separate_decision` | One transaction spending two inscribe-transfer inscriptions yields two transfer records under `?txid=`, without overwriting the inscribe-transfer verdicts. |
+| `history_before_decision_coverage_is_not_evaluated_rather_than_inferred` | A database indexed without the table gains it on the next block without a rebuild, reports `drc20DecisionsFromHeight`, and answers older operations with `outside-decision-coverage`. |
+| `reorg_rolls_decisions_back_with_the_ledger_and_reindexing_restores_them` | Invalidating the tip removes the orphaned block's verdict and ledger effect; re-mining the transaction re-derives both under an incremented `reorgEpoch`. |
+| `capabilities_advertise_retained_decisions_and_their_coverage_start` | `/api/v1/capabilities` reports `network`, `drc20Decisions` and `drc20DecisionsFromHeight`. |
+| `a_database_without_the_drc20_index_reports_decisions_as_disabled` | Without `--index-drc20` every verdict is `not-evaluated` with `drc20-index-disabled` and the collection route is 400. |
+
+The server's index thread polls every five seconds, so each test spends most
+of its wall-clock time waiting for a sync rather than computing.
+
 What is not covered
 -------------------
 
 Stated plainly, because the gap matters:
 
-- **No end-to-end indexing test.** Nothing in CI indexes real blocks. There is
-  no regtest fixture chain, no reorg simulation, no savepoint rollback test.
-- **No DRC-20 or Dunes protocol-semantics tests.** Deploy, mint and transfer
-  rules, supply caps and holder accounting are exercised only in production.
-- **No HTTP integration tests.** The `/api/v1` tests cover serialization, not
-  routing, extraction or error mapping.
+- **End-to-end indexing is covered only through the DRC-20 decision suite.**
+  It exercises a regtest chain, one savepoint rollback and the routes it
+  needs; sat indexing, dunes and the remaining `/api/v1` routes are still
+  proved by serialization tests alone.
+- **No Dunes protocol-semantics tests.** Etching, minting and edict rules are
+  exercised only in production.
 - **No wallet tests**, which is consistent: the wallet subcommands do not work
   on Dogecoin.
 
 Production compatibility is instead covered by the cross-platform build, these
-two focused suites, and deployment smoke tests against an isolated Dogecoin
+three focused suites, and deployment smoke tests against an isolated Dogecoin
 Core 1.14.9 node with `txindex`.
 
 Fuzzing
