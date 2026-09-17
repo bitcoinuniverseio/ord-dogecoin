@@ -16,6 +16,15 @@ Unreleased (Bitcoin Universe fork)
   it reads upstream, and was failing every Doginals detail with
   `dogecoin-protocol-authority-unavailable` against the HTML answer.
 - `GET /api/v1/inscriptions/{id}` serves the same document unconditionally.
+- `GET /output/{outpoint}` answers the upstream `ord` JSON output detail under
+  `Accept: application/json` (`outpoint`, `address`, `indexed`,
+  `inscriptions`, `runes` carrying the Dunes balance, `sat_ranges`,
+  `script_pubkey`, `spent`, `transaction`, `value`, plus `chain` and
+  `network`); an unknown outpoint is `404 {"error":"output not found"}`.
+  `GET /api/v1/outputs/{outpoint}` serves the same document unconditionally.
+  The explorer overlay's outpoint enrichment reads this route as it reads
+  upstream and was labelling every Dogecoin holding out of coverage against
+  the HTML answer.
 - `tests/inscription_json.rs`: an end-to-end regtest suite covering the
   negotiated detail, the HTML fallback, the JSON 404 and the `/api/v1` alias.
 - Retain a per-operation DRC-20 decision (accepted, or rejected with the
