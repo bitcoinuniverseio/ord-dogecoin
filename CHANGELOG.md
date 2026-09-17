@@ -5,6 +5,19 @@ Unreleased (Bitcoin Universe fork)
 ----------------------------------
 
 ### Added
+- `GET /inscription/{id}` and `GET /shibescription/{id}` answer the upstream
+  `ord` JSON inscription detail when the request carries
+  `Accept: application/json` (`id`, `number`, `address`, `content_type`,
+  `content_length`, `height`, `fee`, `value`, `sat`, `satpoint`, `timestamp`,
+  `charms`, `parents`, `child_count`, `rune`, `metaprotocol`, plus `output`,
+  `genesis_transaction`, `previous`, `next`, `chain` and `network`), and an
+  unknown id is `404 {"error":"inscription not found"}`. Browsers without the
+  header keep the HTML page. The explorer overlay reads this route exactly as
+  it reads upstream, and was failing every Doginals detail with
+  `dogecoin-protocol-authority-unavailable` against the HTML answer.
+- `GET /api/v1/inscriptions/{id}` serves the same document unconditionally.
+- `tests/inscription_json.rs`: an end-to-end regtest suite covering the
+  negotiated detail, the HTML fallback, the JSON 404 and the `/api/v1` alias.
 - Retain a per-operation DRC-20 decision (accepted, or rejected with the
   protocol reason) in the new `DRC20_OPERATION_DECISIONS` table, written in the
   same write transaction as the ledger change and rolled back with it on a
