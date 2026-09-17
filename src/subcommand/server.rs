@@ -13,12 +13,13 @@ use {
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
       Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory,
       Drc20TokenInventoryItem, DuneTokenDetail, DuneTokenInventory, DuneTokenInventoryItem,
-      IndexCapabilities,
+      Drc20DecisionCheckpoint, Drc20DecisionCoverage, Drc20OperationDecision,
+      Drc20TransactionDecisions, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
-      FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
-      resolved_content_metadata,
+      FundingInventoryItem, InscriptionDetail, InscriptionInventory, InscriptionInventoryItem,
+      InventoryLocation, OutputDetail, OutputDuneBalance, resolved_content_metadata,
     },
-    drc20::{script_key::ScriptKey, Tick},
+    drc20::{script_key::ScriptKey, OperationDecision, Tick, DRC20_RULESET},
     page_config::PageConfig,
     templates::{
       AddressOutputJson, BlockHtml, BlockJson, DuneAddressJson, DuneBalance, DuneBalancesHtml,
@@ -45,7 +46,6 @@ use {
     caches::DirCache,
     AcmeConfig,
   },
-  serde_json::to_string,
   std::collections::HashMap,
   std::{cmp::Ordering, str},
   tokio_stream::StreamExt,
@@ -170,6 +170,11 @@ struct InscriptionInventoryQuery {
 struct Drc20InventoryQuery {
   cursor: Option<String>,
   limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct Drc20OperationsQuery {
+  txid: Option<String>,
 }
 
 #[expect(dead_code, reason = "retained for legacy block route decoding")]
@@ -337,10 +342,23 @@ impl Server {
           get(Self::inscription_inventory),
         )
         .route(
+          "/api/v1/inscriptions/:inscription_id",
+          get(Self::inscription_detail),
+        )
+        .route("/api/v1/outputs/:outpoint", get(Self::output_detail))
+        .route(
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
+        .route(
+          "/api/v1/drc20/operations",
+          get(Self::drc20_transaction_decisions),
+        )
+        .route(
+          "/api/v1/drc20/operations/:inscription_id",
+          get(Self::drc20_operation_decision),
+        )
         .route("/api/v1/drc20/tokens", get(Self::drc20_token_inventory))
         .route("/api/v1/drc20/tokens/:tick", get(Self::drc20_token_detail))
         .route(
@@ -411,6 +429,8 @@ impl Server {
         .route("/search/*query", get(Self::search_by_path))
         .route("/static/*path", get(Self::static_asset))
         .route("/status", get(Self::status))
+        .route("/blockhash", get(Self::blockhash))
+        .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
         .layer(Extension(page_config))
@@ -616,11 +636,104 @@ impl Server {
     Redirect::to(&format!("/sat/{sat}"))
   }
 
+  fn output_not_found_json() -> Response {
+    (
+      StatusCode::NOT_FOUND,
+      Json(json!({ "error": "output not found" })),
+    )
+      .into_response()
+  }
+
+  async fn output_detail(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(outpoint): Path<String>,
+  ) -> ServerResult<Response> {
+    Self::output_detail_response(&page_config, &index, &outpoint)
+  }
+
+  fn output_detail_response(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: &str,
+  ) -> ServerResult<Response> {
+    let Ok(outpoint) = OutPoint::from_str(outpoint) else {
+      return Ok(Self::output_not_found_json());
+    };
+    match Self::output_detail_for(page_config, index, outpoint)? {
+      Some(detail) => Ok(Json(detail).into_response()),
+      None => Ok(Self::output_not_found_json()),
+    }
+  }
+
+  fn output_detail_for(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: OutPoint,
+  ) -> ServerResult<Option<OutputDetail>> {
+    let Some(transaction) = index.get_transaction(outpoint.txid)? else {
+      return Ok(None);
+    };
+    let Some(output) = transaction.output.into_iter().nth(outpoint.vout as usize) else {
+      return Ok(None);
+    };
+    let Some(unspent) = index.is_output_unspent(outpoint)? else {
+      return Ok(None);
+    };
+    let sat_ranges = match index.list(outpoint)? {
+      Some(List::Unspent(ranges)) => Some(ranges),
+      _ => None,
+    };
+    let inscriptions = index
+      .get_inscriptions_on_output(outpoint)?
+      .into_iter()
+      .map(|id| id.to_string())
+      .collect();
+    let runes = index
+      .get_dune_balances_for_outpoint(outpoint)?
+      .into_iter()
+      .map(|(dune, pile)| {
+        (
+          dune.to_string(),
+          OutputDuneBalance {
+            amount: pile.amount,
+            divisibility: pile.divisibility,
+            symbol: pile.symbol,
+          },
+        )
+      })
+      .collect();
+    Ok(Some(OutputDetail {
+      chain: "dogecoin",
+      network: page_config.chain.to_string(),
+      outpoint: outpoint.to_string(),
+      address: page_config
+        .chain
+        .address_from_script(&output.script_pubkey)
+        .ok()
+        .map(|address| address.to_string()),
+      indexed: true,
+      inscriptions,
+      runes,
+      sat_ranges,
+      script_pubkey: output.script_pubkey.asm(),
+      spent: !unspent,
+      transaction: outpoint.txid.to_string(),
+      value: output.value,
+    }))
+  }
+
   async fn output(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
-    Path(outpoint): Path<OutPoint>,
-  ) -> ServerResult<PageHtml<OutputHtml>> {
+    Path(outpoint): Path<String>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      return Self::output_detail_response(&page_config, &index, &outpoint);
+    }
+    let outpoint = OutPoint::from_str(&outpoint)
+      .map_err(|err| ServerError::BadRequest(format!("invalid outpoint: {err}")))?;
     let list = index.list(outpoint)?;
 
     let output = if outpoint == OutPoint::null() {
@@ -659,7 +772,8 @@ impl Server {
         output,
         dunes,
       }
-      .page(page_config),
+      .page(page_config)
+      .into_response(),
     )
   }
 
@@ -1255,22 +1369,20 @@ impl Server {
   async fn outputs_by_address(
     Extension(index): Extension<Arc<Index>>,
     Path(address): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let mut outputs = vec![];
     let outpoints = index.get_account_outputs(address)?;
 
     outputs.push(AddressOutputJson::new(outpoints));
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    Ok(Json(outputs).into_response())
   }
 
   async fn outputs(
     Extension(server_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
     Path(outpoints_str): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let outpoints: Vec<OutPoint> = outpoints_str
       .split(',')
       .map(|s| OutPoint::from_str(s).expect("Failed to parse OutPoint"))
@@ -1315,9 +1427,9 @@ impl Server {
       ))
     }
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    // JSON with the JSON content type: the explorer's client refuses a JSON
+    // body labelled text/plain.
+    Ok(Json(outputs).into_response())
   }
 
   async fn drc20_tick_info(
@@ -1891,7 +2003,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(path): Path<(u32, u32)>,
     Query(query): Query<BlocksQuery>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let (height, endheight) = path;
     let mut blocks = vec![];
     for height in height..endheight {
@@ -2080,9 +2192,7 @@ impl Server {
     }
 
     // This will convert the Vec<BlocksJson> into a JSON string
-    let blocks_json = to_string(&blocks).context("Failed to serialize blocks")?;
-
-    Ok(blocks_json)
+    Ok(Json(blocks).into_response())
   }
 
   async fn transaction(
@@ -2119,18 +2229,60 @@ impl Server {
     })
   }
 
-  async fn status(Extension(index): Extension<Arc<Index>>) -> (StatusCode, &'static str) {
-    if index.is_unrecoverably_reorged() {
-      (
-        StatusCode::OK,
-        "unrecoverable reorg detected, please rebuild the database.",
-      )
-    } else {
-      (
-        StatusCode::OK,
-        StatusCode::OK.canonical_reason().unwrap_or_default(),
-      )
+  async fn status(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      // The upstream `ord` status document, so a consumer written against it
+      // reads this fork's index availability unchanged. `height` is the last
+      // indexed height, null before the first block is indexed.
+      let block_count = index.block_count()?;
+      return Ok(
+        Json(json!({
+          "chain": "dogecoin",
+          "network": page_config.chain.to_string(),
+          "height": block_count.checked_sub(1),
+          "address_index": true,
+          "inscription_index": true,
+          "rune_index": index.has_dune_index(),
+          "sat_index": index.has_sat_index(),
+          "transaction_index": index.has_transaction_index(),
+          "drc20_index": index.has_drc20_index(),
+          "unrecoverably_reorged": index.is_unrecoverably_reorged(),
+        }))
+        .into_response(),
+      );
     }
+    let text = if index.is_unrecoverably_reorged() {
+      "unrecoverable reorg detected, please rebuild the database."
+    } else {
+      StatusCode::OK.canonical_reason().unwrap_or_default()
+    };
+    Ok((StatusCode::OK, text).into_response())
+  }
+
+  /// The tip block hash as bare text, as upstream `ord` answers it.
+  async fn blockhash(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(None)?
+        .ok_or_not_found(|| "blockhash".to_string())?
+        .to_string(),
+    )
+  }
+
+  async fn blockhash_at_height(
+    Extension(index): Extension<Arc<Index>>,
+    Path(height): Path<u32>,
+  ) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(Some(height))?
+        .ok_or_not_found(|| format!("blockhash {height}"))?
+        .to_string(),
+    )
   }
 
   async fn search_by_query(
@@ -2459,12 +2611,134 @@ impl Server {
     }
   }
 
+  /// Whether the request negotiates JSON the way upstream `ord` does, so a
+  /// consumer written against upstream reads this fork unchanged.
+  fn accepts_json(headers: &HeaderMap) -> bool {
+    headers
+      .get(header::ACCEPT)
+      .and_then(|value| value.to_str().ok())
+      .map(|accept| {
+        accept
+          .split(',')
+          .any(|media| media.trim().split(';').next() == Some("application/json"))
+      })
+      .unwrap_or(false)
+  }
+
+  fn inscription_not_found_json() -> Response {
+    (
+      StatusCode::NOT_FOUND,
+      Json(json!({ "error": "inscription not found" })),
+    )
+      .into_response()
+  }
+
+  async fn inscription_detail(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(inscription_id): Path<String>,
+  ) -> ServerResult<Response> {
+    Self::inscription_detail_response(&page_config, &index, &inscription_id)
+  }
+
+  fn inscription_detail_response(
+    page_config: &PageConfig,
+    index: &Index,
+    inscription_id: &str,
+  ) -> ServerResult<Response> {
+    let Ok(inscription_id) = InscriptionId::from_str(inscription_id) else {
+      return Ok(Self::inscription_not_found_json());
+    };
+    match Self::inscription_detail_for(page_config, index, inscription_id)? {
+      Some(detail) => Ok(Json(detail).into_response()),
+      None => Ok(Self::inscription_not_found_json()),
+    }
+  }
+
+  fn inscription_detail_for(
+    page_config: &PageConfig,
+    index: &Index,
+    inscription_id: InscriptionId,
+  ) -> ServerResult<Option<InscriptionDetail>> {
+    let Some(entry) = index.get_inscription_entry(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let Some(inscription) = index.get_inscription_by_id(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let delegate = match inscription.delegate() {
+      Some(delegate) => index.get_inscription_by_id(delegate)?,
+      None => None,
+    };
+    let (content_type, content_length) = resolved_content_metadata(&inscription, delegate.as_ref());
+
+    let Some(satpoint) = index.get_inscription_satpoint_by_id(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let output = index
+      .get_transaction(satpoint.outpoint.txid)?
+      .ok_or_not_found(|| format!("inscription {inscription_id} current transaction"))?
+      .output
+      .into_iter()
+      .nth(satpoint.outpoint.vout.try_into().unwrap())
+      .ok_or_not_found(|| format!("inscription {inscription_id} current transaction output"))?;
+
+    let address = page_config
+      .chain
+      .address_from_script(&output.script_pubkey)
+      .ok()
+      .map(|address| address.to_string());
+
+    let previous = match entry.inscription_number.checked_sub(1) {
+      Some(previous) => index.get_inscription_id_by_inscription_number(previous)?,
+      None => None,
+    };
+
+    let next = index.get_inscription_id_by_inscription_number(entry.inscription_number + 1)?;
+
+    Ok(Some(InscriptionDetail {
+      chain: "dogecoin",
+      network: page_config.chain.to_string(),
+      id: inscription_id.to_string(),
+      number: entry.inscription_number,
+      address,
+      content_type,
+      content_length,
+      height: entry.height,
+      fee: entry.fee,
+      value: output.value,
+      sat: entry.sat.map(Sat::n),
+      satpoint: satpoint.to_string(),
+      output: satpoint.outpoint.to_string(),
+      genesis_transaction: inscription_id.txid.to_string(),
+      timestamp: entry.timestamp,
+      charms: Vec::new(),
+      parents: Vec::new(),
+      child_count: 0,
+      rune: None,
+      metaprotocol: None,
+      previous: previous.map(|id| id.to_string()),
+      next: next.map(|id| id.to_string()),
+    }))
+  }
+
   async fn inscription(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
-    Path(inscription_id): Path<InscriptionId>,
+    Path(inscription_id): Path<String>,
     Query(query): Query<JsonQuery>,
+    headers: HeaderMap,
   ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      return Self::inscription_detail_response(&page_config, &index, &inscription_id);
+    }
+
+    let inscription_id = InscriptionId::from_str(&inscription_id)
+      .map_err(|err| ServerError::BadRequest(format!("invalid inscription id: {err}")))?;
+
     let entry = index
       .get_inscription_entry(inscription_id)?
       .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
@@ -2770,6 +3044,7 @@ impl Server {
   /// chain with no tokens from one caused by a database created without
   /// `--index-drc20`. Both used to look like `200 []`.
   async fn index_capabilities(
+    Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<Response> {
     let block_count = index.block_count()?;
@@ -2779,12 +3054,146 @@ impl Server {
     Ok(
       Json(IndexCapabilities {
         chain: "dogecoin",
+        network: page_config.chain.to_string(),
         block_count,
         block_hash: block_hash.to_string(),
         drc20: index.has_drc20_index(),
         dunes: index.has_dune_index(),
         sats: index.has_sat_index(),
         transactions: index.has_transaction_index(),
+        drc20_decisions: index.has_drc20_index(),
+        drc20_decisions_from_height: index.drc20_decisions_from_height()?,
+      })
+      .into_response(),
+    )
+  }
+
+  fn drc20_decision_coverage(index: &Index) -> ServerResult<Drc20DecisionCoverage> {
+    let indexed_height = index
+      .height()?
+      .ok_or_not_found(|| "indexed chain tip")?
+      .n();
+    Ok(Drc20DecisionCoverage {
+      decisions_from_height: index.drc20_decisions_from_height()?,
+      indexed_height,
+    })
+  }
+
+  fn drc20_retained_decision(
+    index: &Index,
+    decision: OperationDecision,
+  ) -> ServerResult<Drc20OperationDecision> {
+    Ok(Drc20OperationDecision {
+      inscription_id: decision.inscription_id.to_string(),
+      txid: decision.txid.to_string(),
+      index: decision.inscription_id.index,
+      operation: Some(decision.operation.as_str()),
+      tick: Some(decision.tick),
+      amount: decision.amount.map(|amount| amount.to_string()),
+      verdict: decision.verdict.as_str(),
+      reason: decision.reason,
+      ruleset: DRC20_RULESET,
+      checkpoint: Some(Drc20DecisionCheckpoint {
+        height: decision.height,
+        block_hash: decision.block_hash.to_string(),
+      }),
+      reorg_epoch: decision.reorg_epoch,
+      coverage: Self::drc20_decision_coverage(index)?,
+    })
+  }
+
+  /// The verdict for one DRC-20 operation, addressed by the inscription that
+  /// carried it.
+  ///
+  /// An inscription's own deploy, mint or inscribe-transfer is the operation
+  /// whose txid is the inscription's txid, which is what this route answers.
+  /// The first transfer of an inscribe-transfer inscription happens in a
+  /// later transaction and is listed by `?txid=` on the collection route.
+  ///
+  /// `404` means the inscription is not indexed at all. `200` with verdict
+  /// `not-evaluated` means it is indexed but no verdict was retained, and
+  /// `reason` says why. Neither is a rejection.
+  async fn drc20_operation_decision(
+    Extension(index): Extension<Arc<Index>>,
+    Path(inscription_id): Path<InscriptionId>,
+  ) -> ServerResult<Response> {
+    let entry = index
+      .get_inscription_entry(inscription_id)?
+      .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+
+    if index.has_drc20_index() {
+      if let Some(decision) =
+        index.get_drc20_operation_decision(inscription_id.txid, inscription_id)?
+      {
+        return Ok(Json(Self::drc20_retained_decision(&index, decision)?).into_response());
+      }
+    }
+
+    let coverage = Self::drc20_decision_coverage(&index)?;
+    let reason = if !index.has_drc20_index() {
+      "drc20-index-disabled"
+    } else if coverage
+      .decisions_from_height
+      .is_none_or(|from| entry.height < from)
+    {
+      "outside-decision-coverage"
+    } else {
+      "not-a-drc20-operation"
+    };
+    let checkpoint = index
+      .block_hash(Some(entry.height))?
+      .map(|block_hash| Drc20DecisionCheckpoint {
+        height: entry.height,
+        block_hash: block_hash.to_string(),
+      });
+
+    Ok(
+      Json(Drc20OperationDecision {
+        inscription_id: inscription_id.to_string(),
+        txid: inscription_id.txid.to_string(),
+        index: inscription_id.index,
+        operation: None,
+        tick: None,
+        amount: None,
+        verdict: "not-evaluated",
+        reason: Some(reason.to_string()),
+        ruleset: DRC20_RULESET,
+        checkpoint,
+        reorg_epoch: index.reorg_epoch()?,
+        coverage,
+      })
+      .into_response(),
+    )
+  }
+
+  /// Every retained DRC-20 decision for the operations one transaction
+  /// carried. A transaction may inscribe one operation and spend several
+  /// inscribe-transfer inscriptions at once; each is a separate record.
+  async fn drc20_transaction_decisions(
+    Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20OperationsQuery>,
+  ) -> ServerResult<Response> {
+    let txid = query
+      .txid
+      .as_deref()
+      .ok_or_else(|| ServerError::BadRequest("txid query parameter is required".to_string()))?
+      .parse::<Txid>()
+      .map_err(|error| ServerError::BadRequest(format!("invalid txid: {error}")))?;
+
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(DRC20_INDEX_ABSENT.to_string()));
+    }
+
+    let mut decisions = Vec::new();
+    for decision in index.get_drc20_operation_decisions_by_txid(txid)? {
+      decisions.push(Self::drc20_retained_decision(&index, decision)?);
+    }
+
+    Ok(
+      Json(Drc20TransactionDecisions {
+        txid: txid.to_string(),
+        decisions,
+        coverage: Self::drc20_decision_coverage(&index)?,
       })
       .into_response(),
     )

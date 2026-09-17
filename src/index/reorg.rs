@@ -62,9 +62,22 @@ impl Reorg {
 
     let mut wtx = index.begin_write()?;
 
+    // Read the rollback counter before the restore replaces every table with
+    // the savepoint's contents, so the counter keeps growing across rollbacks
+    // instead of being reset to whatever the savepoint held.
+    let reorgs_before = wtx
+      .open_table(STATISTIC_TO_COUNT)?
+      .get(&Statistic::Reorgs.key())?
+      .map(|value| value.value())
+      .unwrap_or(0);
+
     let oldest_savepoint = wtx.get_persistent_savepoint(wtx.list_persistent_savepoints()?.min().unwrap())?;
 
     wtx.restore_savepoint(&oldest_savepoint)?;
+
+    wtx
+      .open_table(STATISTIC_TO_COUNT)?
+      .insert(&Statistic::Reorgs.key(), &(reorgs_before + 1))?;
 
     Index::increment_statistic(&wtx, Statistic::Commits, 1)?;
     wtx.commit()?;

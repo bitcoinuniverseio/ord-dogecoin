@@ -120,6 +120,11 @@ pub struct TransactionTemplate<'a> {
   pub output_values: &'a [u64],
   pub outputs: usize,
   pub witness: Witness,
+  /// Placed on the first input, where the Dogecoin inscription parser reads it.
+  pub script_sig: Script,
+  /// Script of every regular output; empty by default, so tests that need an
+  /// address-bearing output (holder attribution) set a P2PKH script here.
+  pub output_script: Script,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,6 +159,8 @@ impl<'a> Default for TransactionTemplate<'a> {
       output_values: &[],
       outputs: 1,
       witness: Witness::default(),
+      script_sig: Script::new(),
+      output_script: Script::new(),
     }
   }
 }

@@ -58,10 +58,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [chain, block_count, block_hash, drc20, dunes, sats, transactions]
+                required: [chain, network, block_count, block_hash, drc20, dunes, sats, transactions, drc20Decisions, drc20DecisionsFromHeight]
                 properties:
                   chain:
                     type: string
+                  network:
+                    type: string
+                    enum: [mainnet, testnet, regtest, signet]
+                    description: The configured Dogecoin network
                   block_count:
                     type: integer
                   block_hash:
@@ -76,6 +80,19 @@ paths:
                   transactions:
                     type: boolean
                     description: Database was created with --index-transactions
+                  drc20Decisions:
+                    type: boolean
+                    description: >-
+                      Per-operation DRC-20 verdicts are retained in the same
+                      write transaction as the ledger change. False when the
+                      database was created without --index-drc20.
+                  drc20DecisionsFromHeight:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      First height whose DRC-20 verdicts are retained. Null
+                      until the decision table has recorded its first block.
+                      Operations below it are reported as not-evaluated.
   /api/v1/inscriptions:
     get:
       summary: Walk indexed inscriptions, newest first
@@ -145,6 +162,78 @@ paths:
           description: Invalid limit, or SUBSIDIES_PATH is not set
         '404':
           description: The index has no chain tip yet
+  /api/v1/inscriptions/{inscription_id}:
+    get:
+      summary: Get one inscription in the upstream ord JSON layout
+      description: >-
+        The same document GET /inscription/{inscription_id} answers under
+        Accept: application/json, always as JSON. Field names follow upstream
+        ord so a consumer written against it reads this fork unchanged; every
+        integer is an exact JSON number (a u64 is printed without rounding).
+        charms, parents, child_count, rune and metaprotocol are present for
+        layout compatibility and always empty: this fork does not index them.
+      operationId: getInscriptionDetail
+      parameters:
+        - name: inscription_id
+          in: path
+          required: true
+          description: Inscription ID (txid followed by i and the index)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The inscription
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InscriptionDetail'
+        '404':
+          description: No inscription with that id, or a malformed id
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    enum: ['inscription not found']
+  /api/v1/outputs/{outpoint}:
+    get:
+      summary: Get one transaction output in the upstream ord JSON layout
+      description: >-
+        The same document GET /output/{outpoint} answers under
+        Accept: application/json, always as JSON. Field names follow upstream
+        ord so a consumer written against it reads this fork unchanged: runes
+        carries the Dunes balance of the output under the upstream key,
+        sat_ranges is null without --index-sats, and every integer is an
+        exact JSON number.
+      operationId: getOutputDetail
+      parameters:
+        - name: outpoint
+          in: path
+          required: true
+          description: Outpoint as txid:vout
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutputDetail'
+        '404':
+          description: The index does not know the transaction, the vout is out of range, or the outpoint is malformed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    enum: ['output not found']
   /api/v1/drc20/transferables:
     get:
       summary: List every outstanding DRC-20 transferable inscription
@@ -329,6 +418,71 @@ paths:
             DRC-20 state
         '404':
           description: Unknown ticker
+  /api/v1/drc20/operations/{inscriptionId}:
+    get:
+      summary: Get the retained verdict for one DRC-20 operation
+      description: >-
+        Answers whether the indexer accepted or rejected the DRC-20 operation
+        an inscription carried, and why. The verdict was written in the same
+        write transaction as the ledger change it explains and is rolled back
+        with it on a reorg. An inscription's own deploy, mint or
+        inscribe-transfer is the operation whose txid equals the inscription's
+        txid; its later first transfer is listed by the collection route with
+        ?txid=. A verdict of not-evaluated with a reason is neither an
+        acceptance nor a rejection and must not be inferred into one.
+      operationId: getDrc20OperationDecision
+      parameters:
+        - name: inscriptionId
+          in: path
+          required: true
+          description: Inscription id, txid followed by i and the index
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The retained verdict, or an explicit not-evaluated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drc20OperationDecision'
+        '404':
+          description: The inscription is not indexed
+  /api/v1/drc20/operations:
+    get:
+      summary: List every retained DRC-20 verdict for one transaction
+      description: >-
+        One transaction can inscribe an operation and spend several
+        inscribe-transfer inscriptions at once; each is a separate record.
+        An empty list means no verdict is retained for that txid; coverage
+        says whether the index could have retained one.
+      operationId: listDrc20TransactionDecisions
+      parameters:
+        - name: txid
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retained verdicts for the transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [txid, decisions, coverage]
+                properties:
+                  txid:
+                    type: string
+                  decisions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Drc20OperationDecision'
+                  coverage:
+                    $ref: '#/components/schemas/Drc20DecisionCoverage'
+        '400':
+          description: >-
+            Missing or malformed txid, or this database was created without
+            --index-drc20
   /api/v1/dunes/tokens:
     get:
       summary: Get the dune catalog with indexed protocol state
@@ -941,6 +1095,12 @@ paths:
   /inscription/{inscription_id}:
     get:
       summary: Get inscription details
+      description: >-
+        HTML for browsers. With Accept: application/json the response is the
+        InscriptionDetail document of /api/v1/inscriptions/{inscription_id},
+        as upstream ord negotiates it, and an unknown id is a JSON 404.
+        /shibescription/{inscription_id} is an alias with the same behaviour.
+        The legacy ?json=true query keeps its wonky-ord shape.
       operationId: getInscription
       parameters:
         - name: inscription_id
@@ -949,10 +1109,16 @@ paths:
           description: Inscription ID
           schema:
             type: string
+        - name: Accept
+          in: header
+          required: false
+          description: application/json selects the upstream ord JSON layout
+          schema:
+            type: string
         - name: json
           in: query
           required: false
-          description: Return response in JSON format
+          description: Return the legacy wonky-ord JSON shape
           schema:
             type: boolean
       responses:
@@ -964,7 +1130,9 @@ paths:
                 type: string
             application/json:
               schema:
-                type: object
+                $ref: '#/components/schemas/InscriptionDetail'
+        '404':
+          description: Unknown inscription; JSON under Accept application/json
 
   /inscriptions:
     get:
@@ -1598,6 +1766,87 @@ paths:
 
 components:
   schemas:
+    Drc20DecisionCoverage:
+      type: object
+      required: [decisionsFromHeight, indexedHeight]
+      properties:
+        decisionsFromHeight:
+          type: integer
+          nullable: true
+          description: First height whose verdicts are retained; null if none yet
+        indexedHeight:
+          type: integer
+          description: Height of the last indexed block
+    Drc20OperationDecision:
+      type: object
+      required:
+        - inscriptionId
+        - txid
+        - index
+        - operation
+        - tick
+        - amount
+        - verdict
+        - reason
+        - ruleset
+        - checkpoint
+        - reorgEpoch
+        - coverage
+      properties:
+        inscriptionId:
+          type: string
+        txid:
+          type: string
+          description: Transaction that carried the operation
+        index:
+          type: integer
+          description: Inscription index within the inscription's transaction
+        operation:
+          type: string
+          nullable: true
+          enum: [deploy, mint, inscribe-transfer, transfer]
+        tick:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+          description: >-
+            Ledger-effective atomic amount as an exact decimal string. Present
+            only on accepted mint, inscribe-transfer and transfer operations.
+        verdict:
+          type: string
+          enum: [accepted, rejected, not-evaluated]
+        reason:
+          type: string
+          nullable: true
+          description: >-
+            The protocol error when rejected. When not-evaluated, one of
+            drc20-index-disabled, outside-decision-coverage or
+            not-a-drc20-operation.
+        ruleset:
+          type: string
+          description: Rule set the verdict was produced under, currently drc20-v1
+        checkpoint:
+          type: object
+          nullable: true
+          required: [height, blockHash]
+          properties:
+            height:
+              type: integer
+            blockHash:
+              type: string
+          description: >-
+            The block the verdict was decided in, or the inscription's block
+            when not evaluated.
+        reorgEpoch:
+          type: integer
+          description: >-
+            Savepoint rollbacks the index had performed when the verdict was
+            recorded. A record re-derived after a rollback carries a higher
+            value than the one it replaced.
+        coverage:
+          $ref: '#/components/schemas/Drc20DecisionCoverage'
     InscriptionAddressJson:
       type: object
       required: [inscriptions, total_inscriptions]
@@ -1660,6 +1909,185 @@ components:
             - $ref: '#/components/schemas/InventoryLocation'
           nullable: true
           description: Null when the inscription sits on lost value
+    OutputDetail:
+      type: object
+      description: >-
+        One transaction output in the field layout upstream ord answers for
+        GET /output/{outpoint} under Accept application/json. Integers are
+        exact JSON numbers.
+      required:
+        - chain
+        - network
+        - outpoint
+        - address
+        - indexed
+        - inscriptions
+        - runes
+        - sat_ranges
+        - script_pubkey
+        - spent
+        - transaction
+        - value
+      properties:
+        chain:
+          type: string
+          enum: [dogecoin]
+        network:
+          type: string
+        outpoint:
+          type: string
+          description: txid:vout
+        address:
+          type: string
+          nullable: true
+          description: Null when the script is not an address
+        indexed:
+          type: boolean
+        inscriptions:
+          type: array
+          items:
+            type: string
+          description: Inscription ids currently on the output
+        runes:
+          type: object
+          description: Dunes on the output, keyed by spaced dune name
+          additionalProperties:
+            type: object
+            required: [amount, divisibility, symbol]
+            properties:
+              amount:
+                type: integer
+              divisibility:
+                type: integer
+              symbol:
+                type: string
+                nullable: true
+        sat_ranges:
+          type: array
+          nullable: true
+          description: Null without --index-sats
+          items:
+            type: array
+            items:
+              type: integer
+        script_pubkey:
+          type: string
+          description: The output script as assembly
+        spent:
+          type: boolean
+        transaction:
+          type: string
+        value:
+          type: integer
+          description: Value in koinu
+    InscriptionDetail:
+      type: object
+      description: >-
+        One inscription in the field layout upstream ord answers for
+        GET /inscription/{id} under Accept application/json. Integers are
+        exact JSON numbers.
+      required:
+        - chain
+        - network
+        - id
+        - number
+        - address
+        - content_type
+        - content_length
+        - height
+        - fee
+        - value
+        - sat
+        - satpoint
+        - output
+        - genesis_transaction
+        - timestamp
+        - charms
+        - parents
+        - child_count
+        - rune
+        - metaprotocol
+        - previous
+        - next
+      properties:
+        chain:
+          type: string
+          enum: [dogecoin]
+        network:
+          type: string
+          description: mainnet, testnet, regtest or signet, as /api/v1/capabilities reports it
+        id:
+          type: string
+        number:
+          type: integer
+          format: int64
+        address:
+          type: string
+          nullable: true
+          description: Null when the current output is not an address
+        content_type:
+          type: string
+          nullable: true
+          description: Resolved through the delegate, when there is one
+        content_length:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          description: Genesis height
+        fee:
+          type: integer
+          format: int64
+          description: Genesis fee in koinu
+        value:
+          type: integer
+          format: int64
+          description: Value of the current output in koinu
+        sat:
+          type: integer
+          format: int64
+          nullable: true
+          description: Null without --index-sats
+        satpoint:
+          type: string
+          description: txid:vout:offset of the current location
+        output:
+          type: string
+          description: txid:vout of the current output
+        genesis_transaction:
+          type: string
+        timestamp:
+          type: integer
+          description: Unix seconds of the genesis block
+        charms:
+          type: array
+          items:
+            type: string
+          description: Always empty; not indexed by this fork
+        parents:
+          type: array
+          items:
+            type: string
+          description: Always empty; not indexed by this fork
+        child_count:
+          type: integer
+          description: Always 0; not indexed by this fork
+        rune:
+          type: string
+          nullable: true
+          description: Always null; not indexed by this fork
+        metaprotocol:
+          type: string
+          nullable: true
+          description: Always null; not indexed by this fork
+        previous:
+          type: string
+          nullable: true
+          description: Id of the inscription numbered one lower, or null
+        next:
+          type: string
+          nullable: true
+          description: Id of the inscription numbered one higher, or null
     Drc20TokenInventoryItem:
       type: object
       required:

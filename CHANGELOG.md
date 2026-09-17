@@ -1,6 +1,69 @@
 Changelog
 =========
 
+Unreleased (Bitcoin Universe fork)
+----------------------------------
+
+### Added
+- `GET /inscription/{id}` and `GET /shibescription/{id}` answer the upstream
+  `ord` JSON inscription detail when the request carries
+  `Accept: application/json` (`id`, `number`, `address`, `content_type`,
+  `content_length`, `height`, `fee`, `value`, `sat`, `satpoint`, `timestamp`,
+  `charms`, `parents`, `child_count`, `rune`, `metaprotocol`, plus `output`,
+  `genesis_transaction`, `previous`, `next`, `chain` and `network`), and an
+  unknown id is `404 {"error":"inscription not found"}`. Browsers without the
+  header keep the HTML page. The explorer overlay reads this route exactly as
+  it reads upstream, and was failing every Doginals detail with
+  `dogecoin-protocol-authority-unavailable` against the HTML answer.
+- `GET /api/v1/inscriptions/{id}` serves the same document unconditionally.
+- `GET /output/{outpoint}` answers the upstream `ord` JSON output detail under
+  `Accept: application/json` (`outpoint`, `address`, `indexed`,
+  `inscriptions`, `runes` carrying the Dunes balance, `sat_ranges`,
+  `script_pubkey`, `spent`, `transaction`, `value`, plus `chain` and
+  `network`); an unknown outpoint is `404 {"error":"output not found"}`.
+  `GET /api/v1/outputs/{outpoint}` serves the same document unconditionally.
+  The explorer overlay's outpoint enrichment reads this route as it reads
+  upstream and was labelling every Dogecoin holding out of coverage against
+  the HTML answer.
+- `GET /status` answers the upstream `ord` status document under
+  `Accept: application/json` (`height`, `inscription_index`, `rune_index`,
+  `sat_index`, `transaction_index`, `address_index`, `drc20_index`,
+  `unrecoverably_reorged`, `chain`, `network`); the plain-text answer for
+  probes is unchanged. `GET /blockhash` and `GET /blockhash/{height}` answer
+  the block hash as bare text, as upstream does. The overlay reads both
+  before it trusts any output read.
+
+### Fixed
+- `GET /outputs/{list}`, `GET /outputs/address/{address}` and
+  `GET /blocks/{from}/{to}` answer their JSON with the `application/json`
+  content type instead of `text/plain`. The explorer overlay refuses a JSON
+  body labelled as text, so every Dogecoin holding read through the batch
+  route was reported out of coverage.
+- `tests/inscription_json.rs`: an end-to-end regtest suite covering the
+  negotiated detail, the HTML fallback, the JSON 404 and the `/api/v1` alias.
+- Retain a per-operation DRC-20 decision (accepted, or rejected with the
+  protocol reason) in the new `DRC20_OPERATION_DECISIONS` table, written in the
+  same write transaction as the ledger change and rolled back with it on a
+  reorg. Existing databases start recording at the next indexed block; no
+  rebuild.
+- `GET /api/v1/drc20/operations/{inscriptionId}` and
+  `GET /api/v1/drc20/operations?txid=` serve those verdicts with checkpoint,
+  rule set (`drc20-v1`) and reorg epoch, and answer `not-evaluated` with
+  `drc20-index-disabled`, `outside-decision-coverage` or
+  `not-a-drc20-operation` wherever no verdict exists.
+- `GET /api/v1/capabilities` additionally reports `network`,
+  `drc20Decisions` and `drc20DecisionsFromHeight`.
+- `Statistic::Reorgs` counts savepoint rollbacks and survives them.
+- `tests/drc20_decisions.rs`: an end-to-end regtest suite driving the `ord`
+  binary, covering verdicts, multi-operation transactions, coverage without a
+  rebuild, reorg rollback and capabilities. `test-bitcoincore-rpc`
+  transaction templates accept a `script_sig`.
+
+### Changed
+- A redb error while applying a DRC-20 operation now aborts the block instead
+  of being silently discarded, so a database failure is never recorded as a
+  protocol rejection.
+
 [0.5.1](https://github.com/casey/ord/releases/tag/0.5.1) - 2023-02-21
 ---------------------------------------------------------------------
 

@@ -1,0 +1,30 @@
+[Unit]
+Description=Universe Ord Dogecoin Indexer (ord-accel-v9)
+Wants=network-online.target universe-dogecoin.service
+After=network-online.target universe-dogecoin.service
+RequiresMountsFor=/var/lib/universe-ord-0.29
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/local/bin/start_ord_dogecoin.sh
+Restart=on-failure
+RestartSec=15
+KillSignal=SIGINT
+TimeoutStartSec=10min
+TimeoutStopSec=30min
+SendSIGKILL=no
+LimitNOFILE=65536
+StandardOutput=append:/var/lib/universe-ord-0.29/ord-dogecoin/logs/ord.log
+StandardError=append:/var/lib/universe-ord-0.29/ord-dogecoin/logs/ord.log
+
+[Install]
+WantedBy=multi-user.target
+
+# --- drop-in 10-shared-rpc.conf ---
+# 2026-09-16: the Dogecoin RPC used by this authority is the shared Universe
+# Dogecoin Core on universe-indexers-1, reached via universe-dogecoin-rpc-tunnel.
+[Unit]
+Wants=universe-dogecoin-rpc-tunnel.service
+After=universe-dogecoin-rpc-tunnel.service
