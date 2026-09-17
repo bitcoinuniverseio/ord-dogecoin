@@ -11,11 +11,13 @@ use crate::drc20::errors::Error::LedgerError;
 use crate::drc20::operation::{InscriptionOp, Operation};
 use crate::drc20::params::{BIGDECIMAL_TEN, MAX_DECIMAL_WIDTH};
 use crate::drc20::script_key::ScriptKey;
+use crate::drc20::decision::OperationDecisionKey;
 use crate::drc20::{
   max_script_tick_id_key, max_script_tick_key, min_script_tick_id_key, min_script_tick_key,
   script_tick_id_key, script_tick_key, Balance, BlockContext, DRC20Error, Deploy, DeployEvent,
-  Event, InscribeTransferEvent, Message, Mint, MintEvent, Num, Tick, TokenInfo, Transfer,
-  TransferEvent, TransferInfo, TransferableLog,
+  Event, InscribeTransferEvent, Message, Mint, MintEvent, Num, OperationDecision, OperationType,
+  Tick, TokenInfo, Transfer, TransferEvent, TransferInfo, TransferableLog, Verdict,
+  DRC20_RULESET,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +38,7 @@ pub(super) struct Drc20Updater<'a, 'tx> {
     drc20_token_balance: &'a mut Table<'tx, &'static str, &'static [u8]>,
     drc20_inscribe_transfer: &'a mut Table<'tx, &'static [u8; 36], &'static [u8]>,
     drc20_transferable_log: &'a mut Table<'tx, &'static str, &'static [u8]>,
+    drc20_operation_decisions: &'a mut Table<'tx, &'static OperationDecisionKey, &'static [u8]>,
     inscription_id_to_inscription_entry: &'a Table<'tx, &'static InscriptionIdValue, InscriptionEntryValue>,
     transaction_id_to_transaction: &'a mut Table<'tx, &'static TxidValue, &'static [u8]>,
 }
@@ -47,6 +50,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         drc20_token_balance: &'a mut Table<'tx, &'static str, &'static [u8]>,
         drc20_inscribe_transfer: &'a mut Table<'tx, &'static [u8; 36], &'static [u8]>,
         drc20_transferable_log: &'a mut Table<'tx, &'static str, &'static [u8]>,
+        drc20_operation_decisions: &'a mut Table<'tx, &'static OperationDecisionKey, &'static [u8]>,
         inscription_id_to_inscription_entry: &'a Table<'tx, &'static InscriptionIdValue, InscriptionEntryValue>,
         transaction_id_to_transaction: &'a mut Table<'tx, &'static TxidValue, &'static [u8]>,
     ) -> Result<Self> {
@@ -56,6 +60,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
             drc20_token_balance,
             drc20_inscribe_transfer,
             drc20_transferable_log,
+            drc20_operation_decisions,
             inscription_id_to_inscription_entry,
             transaction_id_to_transaction,
         })
@@ -136,7 +141,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
 
     pub fn execute_message(&mut self, context: BlockContext, msg: &Message) -> Result {
         let exec_msg = self.create_execution_message(msg, context.network)?;
-        let _ = match &exec_msg.op {
+        let result = match &exec_msg.op {
             Operation::Deploy(deploy) => {
                 Self::process_deploy(self, context.clone(), &exec_msg, deploy.clone())
             }
@@ -146,7 +151,59 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
             }
             Operation::Transfer(_) => Self::process_transfer(self, context.clone(), &exec_msg.clone()),
         };
+
+        // A protocol rejection is a decision worth retaining. A ledger error is
+        // a database failure while writing this block and must abort the block
+        // rather than be recorded as if the protocol had refused the operation.
+        let (verdict, reason, amount) = match result {
+            Ok(event) => (Verdict::Accepted, None, Self::event_amount(&event)),
+            Err(errors::Error::DRC20Error(error)) => (Verdict::Rejected, Some(error.to_string()), None),
+            Err(errors::Error::LedgerError(error)) => {
+                return Err(anyhow!(
+                    "DRC-20 ledger error while indexing {} in block {}: {error}",
+                    exec_msg.inscription_id,
+                    context.blockheight
+                ))
+            }
+        };
+
+        let (operation, tick) = match &exec_msg.op {
+            Operation::Deploy(deploy) => (OperationType::Deploy, deploy.tick.clone()),
+            Operation::Mint(mint) => (OperationType::Mint, mint.tick.clone()),
+            Operation::InscribeTransfer(transfer) => (OperationType::InscribeTransfer, transfer.tick.clone()),
+            Operation::Transfer(transfer) => (OperationType::Transfer, transfer.tick.clone()),
+        };
+
+        let decision = OperationDecision {
+            version: drc20::decision::DECISION_RECORD_VERSION,
+            txid: exec_msg.txid,
+            inscription_id: exec_msg.inscription_id,
+            operation,
+            tick,
+            amount,
+            verdict,
+            reason,
+            height: u32::try_from(context.blockheight)?,
+            block_hash: context.blockhash,
+            reorg_epoch: context.reorg_epoch,
+            ruleset: DRC20_RULESET.to_string(),
+        };
+
+        self.drc20_operation_decisions.insert(
+            &OperationDecision::key(exec_msg.txid, exec_msg.inscription_id),
+            decision.store().as_slice(),
+        )?;
+
         Ok(())
+    }
+
+    fn event_amount(event: &Event) -> Option<u128> {
+        match event {
+            Event::Deploy(_) => None,
+            Event::Mint(mint) => Some(mint.amount),
+            Event::InscribeTransfer(transfer) => Some(transfer.amount),
+            Event::Transfer(transfer) => Some(transfer.amount),
+        }
     }
 
     pub fn create_execution_message(
@@ -420,7 +477,11 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
       .ok_or(DRC20Error::TransferableNotFound(msg.inscription_id))?;
     let amt = Into::<Num>::into(transferable.amount);
 
-    if transferable.owner != msg.from {
+    // The stored owner round-trips through its address string, which the
+    // address parser tags with the network of its version byte (regtest is
+    // encoded with the testnet bytes), so compare the rendered keys rather
+    // than the address values.
+    if transferable.owner.to_string() != msg.from.to_string() {
       return Err(errors::Error::DRC20Error(
         DRC20Error::TransferableOwnerNotMatch(msg.inscription_id),
       ));

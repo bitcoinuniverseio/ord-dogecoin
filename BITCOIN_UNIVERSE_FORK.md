@@ -30,3 +30,19 @@ The first production patch corrects new-index feature persistence so
 Indexes created by the affected upstream build without DRC20 data must be
 rebuilt; the flag cannot add missing historical protocol state to an existing
 database.
+
+The DRC-20 index retains a per-operation decision. Every deploy, mint,
+inscribe-transfer and transfer the ledger evaluates is recorded as accepted
+or rejected with its protocol reason, in the same redb write transaction as
+the ledger change, in `DRC20_OPERATION_DECISIONS`. Savepoint rollback on a
+reorg removes verdicts together with the balances they explain.
+`GET /api/v1/drc20/operations/{inscriptionId}` and
+`GET /api/v1/drc20/operations?txid=` serve them with the deciding block,
+the rule set (`drc20-v1`) and the index's reorg epoch, and answer
+`not-evaluated` with a reason wherever no verdict exists. An existing
+database needs no rebuild: it records verdicts from the next block it indexes
+and reports that height as `drc20DecisionsFromHeight` on
+`/api/v1/capabilities`, which also reports the configured `network`.
+Operations below that height stay `outside-decision-coverage`; they are
+never inferred from an inscription's `drc-20` marker or from today's
+balances. See `docs/src/dogecoin/http-api.md`.

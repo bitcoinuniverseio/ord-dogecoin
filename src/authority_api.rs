@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use crate::Inscription;
 
@@ -107,6 +108,83 @@ pub struct Drc20TransferableInventory {
   pub transferables: Vec<Drc20TransferableInventoryItem>,
 }
 
+/// One inscription in the field layout upstream `ord` answers for
+/// `GET /inscription/:id` under `Accept: application/json`, so a consumer
+/// written against upstream reads this fork unchanged. Every integer is an
+/// exact JSON number: `serde_json` prints a `u64` without rounding, and the
+/// explorer overlay reads the JSON source text, so nothing is lost at 2^53.
+/// `charms`, `parents`, `child_count`, `rune` and `metaprotocol` exist for
+/// layout compatibility; this fork does not index them, so they are empty.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct InscriptionDetail {
+  pub chain: &'static str,
+  /// The configured Dogecoin network, the same string `/api/v1/capabilities`
+  /// carries.
+  pub network: String,
+  pub id: String,
+  pub number: u64,
+  /// `None` when the current output is not an address.
+  pub address: Option<String>,
+  pub content_type: Option<String>,
+  pub content_length: Option<usize>,
+  /// Genesis height.
+  pub height: u32,
+  /// Genesis fee in koinu.
+  pub fee: u64,
+  /// Value of the current output in koinu.
+  pub value: u64,
+  /// `None` without `--index-sats`.
+  pub sat: Option<u64>,
+  /// `txid:vout:offset` of the current location.
+  pub satpoint: String,
+  /// `txid:vout` of the current output.
+  pub output: String,
+  pub genesis_transaction: String,
+  /// Unix seconds of the genesis block.
+  pub timestamp: u32,
+  pub charms: Vec<String>,
+  pub parents: Vec<String>,
+  pub child_count: u32,
+  pub rune: Option<String>,
+  pub metaprotocol: Option<String>,
+  pub previous: Option<String>,
+  pub next: Option<String>,
+}
+
+/// One transaction output in the field layout upstream `ord` answers for
+/// `GET /output/:outpoint` under `Accept: application/json`. `runes` carries
+/// the Dunes balance of the output under the upstream key so a consumer
+/// written against upstream reads this fork unchanged; `sat_ranges` is
+/// `None` without `--index-sats`.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct OutputDetail {
+  pub chain: &'static str,
+  pub network: String,
+  /// `txid:vout`.
+  pub outpoint: String,
+  /// `None` when the script is not an address.
+  pub address: Option<String>,
+  /// Whether the index has processed the transaction of this output.
+  pub indexed: bool,
+  pub inscriptions: Vec<String>,
+  /// Dunes on the output keyed by spaced name.
+  pub runes: BTreeMap<String, OutputDuneBalance>,
+  pub sat_ranges: Option<Vec<(u64, u64)>>,
+  /// The output script as assembly, as upstream renders it.
+  pub script_pubkey: String,
+  pub spent: bool,
+  pub transaction: String,
+  /// Value in koinu.
+  pub value: u64,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct OutputDuneBalance {
+  pub amount: u128,
+  pub divisibility: u8,
+  pub symbol: Option<char>,
+}
+
 /// One DRC-20 deployment with its indexed protocol state.
 ///
 /// The transferable inventory answers "what can be spent right now". It is
@@ -118,12 +196,82 @@ pub struct Drc20TransferableInventory {
 #[derive(Debug, PartialEq, Serialize)]
 pub struct IndexCapabilities {
   pub chain: &'static str,
+  /// The configured Dogecoin network: `mainnet`, `testnet`, `regtest` or
+  /// `signet`. Lets a consumer verify the network instead of inferring it
+  /// from a port.
+  pub network: String,
   pub block_count: u32,
   pub block_hash: String,
   pub drc20: bool,
   pub dunes: bool,
   pub sats: bool,
   pub transactions: bool,
+  /// Whether this binary retains a per-operation DRC-20 decision in the same
+  /// write transaction as the ledger change. Additive: an older consumer
+  /// ignores it.
+  #[serde(rename = "drc20Decisions")]
+  pub drc20_decisions: bool,
+  /// First height whose decisions are retained, `None` until the table has
+  /// recorded its first block on this database.
+  #[serde(rename = "drc20DecisionsFromHeight")]
+  pub drc20_decisions_from_height: Option<u32>,
+}
+
+/// The block an operation decision, or an unevaluated inscription, belongs to.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Drc20DecisionCheckpoint {
+  pub height: u32,
+  pub block_hash: String,
+}
+
+/// Where decision coverage starts and how far the index has read. An
+/// inscription below `decisions_from_height` has no retained verdict, and
+/// the ledger must not be read backwards to invent one.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Drc20DecisionCoverage {
+  pub decisions_from_height: Option<u32>,
+  pub indexed_height: u32,
+}
+
+/// One DRC-20 operation verdict.
+///
+/// `verdict` is `accepted` or `rejected` only when the indexer evaluated this
+/// exact operation against the ledger and retained the outcome. Everything
+/// else is `not-evaluated` with a `reason` naming why: the DRC-20 index is
+/// disabled, the block predates decision coverage, or the inscription carries
+/// no DRC-20 operation at all. A consumer must never treat `not-evaluated`
+/// as either acceptance or rejection.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Drc20OperationDecision {
+  pub inscription_id: String,
+  pub txid: String,
+  /// Inscription index within the inscription's transaction.
+  pub index: u32,
+  pub operation: Option<&'static str>,
+  pub tick: Option<String>,
+  /// Ledger-effective atomic amount as an exact decimal string; present only
+  /// on accepted mint, inscribe-transfer and transfer operations.
+  pub amount: Option<String>,
+  pub verdict: &'static str,
+  pub reason: Option<String>,
+  pub ruleset: &'static str,
+  pub checkpoint: Option<Drc20DecisionCheckpoint>,
+  pub reorg_epoch: u64,
+  pub coverage: Drc20DecisionCoverage,
+}
+
+/// Every retained decision for the operations carried by one transaction.
+/// A transaction carrying no DRC-20 operation lists none; `coverage` says
+/// whether that absence is meaningful.
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Drc20TransactionDecisions {
+  pub txid: String,
+  pub decisions: Vec<Drc20OperationDecision>,
+  pub coverage: Drc20DecisionCoverage,
 }
 
 #[derive(Debug, PartialEq, Serialize)]

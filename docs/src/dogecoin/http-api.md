@@ -49,12 +49,21 @@ Reports what this database can answer. No parameters.
   "drc20": true,
   "dunes": true,
   "sats": false,
-  "transactions": true
+  "transactions": true,
+  "network": "mainnet",
+  "drc20Decisions": true,
+  "drc20DecisionsFromHeight": 5700000
 }
 ```
 
 The four booleans are the flags stored **in the database file at creation
-time**, not the flags on the command line. This is the endpoint to call before
+time**, not the flags on the command line. `network` is the configured
+chain (`mainnet`, `testnet`, `regtest` or `signet`), so a consumer can
+verify which network it is reading instead of inferring one from a port.
+`drc20Decisions` says whether per-operation DRC-20 verdicts are retained
+(true whenever `drc20` is), and `drc20DecisionsFromHeight` is the first
+height they are retained from, or `null` until the first block has been
+recorded (the operations route below explains coverage). This is the endpoint to call before
 trusting any other one, and the endpoint to poll for liveness: `block_count` is
 the number of indexed blocks, so the indexed tip height is `block_count - 1`.
 
@@ -81,6 +90,98 @@ instances. If `SUBSIDIES_PATH` is unset the endpoint returns 400.
 
 When an inscription delegates its content, `content_type` and `content_length`
 describe the **delegate's** bytes, which is what `/content` will actually serve.
+
+### `GET /api/v1/inscriptions/{inscription_id}`
+
+One inscription in the field layout upstream `ord` answers for
+`GET /inscription/{id}` under `Accept: application/json`, so a consumer written
+against upstream reads this fork unchanged. The same document is what
+`GET /inscription/{inscription_id}` and `GET /shibescription/{inscription_id}`
+answer when the request carries `Accept: application/json`; without that header
+those two routes keep serving HTML for browsers.
+
+```json
+{
+  "chain": "dogecoin",
+  "network": "mainnet",
+  "id": "<txid>i0",
+  "number": 12345,
+  "address": "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq",
+  "content_type": "text/plain;charset=utf-8",
+  "content_length": 42,
+  "height": 4600000,
+  "fee": 2500000000,
+  "value": 100000,
+  "sat": null,
+  "satpoint": "<txid>:0:0",
+  "output": "<txid>:0",
+  "genesis_transaction": "<txid>",
+  "timestamp": 1700000000,
+  "charms": [],
+  "parents": [],
+  "child_count": 0,
+  "rune": null,
+  "metaprotocol": null,
+  "previous": "<txid>i0",
+  "next": null
+}
+```
+
+- `height`, `fee` and `timestamp` describe the genesis block and transaction;
+  `value`, `satpoint`, `output` and `address` describe the current location.
+  `address` is `null` when the current output is not an address, `sat` is
+  `null` without `--index-sats`, and `previous` and `next` are the ids of the
+  inscriptions numbered one lower and one higher, or `null`.
+- `charms`, `parents`, `child_count`, `rune` and `metaprotocol` exist for
+  layout compatibility with upstream and are always empty, `0` or `null`: this
+  fork does not index them.
+- This route is the one exception to rule 1. Its integers are exact JSON
+  numbers because upstream answers them that way and its consumers parse them
+  from the JSON source text. `serde_json` prints a `u64` without rounding.
+- An unknown or malformed id is `404 {"error":"inscription not found"}`.
+
+### `GET /status` and `GET /blockhash`
+
+Under `Accept: application/json`, `GET /status` answers the upstream `ord`
+status document: `chain`, `network`, `height` (the last indexed height, `null`
+before the first block), `address_index`, `inscription_index`, `rune_index`
+(the Dunes index), `sat_index`, `transaction_index`, `drc20_index` and
+`unrecoverably_reorged`. Without the header it stays the plain `OK` text that
+liveness probes read. `GET /blockhash` and `GET /blockhash/{height}` answer the
+block hash as bare text.
+
+### `GET /api/v1/outputs/{outpoint}`
+
+One transaction output in the field layout upstream `ord` answers for
+`GET /output/{outpoint}` under `Accept: application/json`. The same document is
+what `GET /output/{outpoint}` answers when the request carries
+`Accept: application/json`; without that header the route keeps serving HTML.
+
+```json
+{
+  "chain": "dogecoin",
+  "network": "mainnet",
+  "outpoint": "<txid>:0",
+  "address": "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq",
+  "indexed": true,
+  "inscriptions": ["<txid>i0"],
+  "runes": { "UNIVERSE•DUNE": { "amount": 1000, "divisibility": 0, "symbol": null } },
+  "sat_ranges": null,
+  "script_pubkey": "OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG",
+  "spent": false,
+  "transaction": "<txid>",
+  "value": 100000
+}
+```
+
+- `inscriptions` are the ids currently on the output; a spent output has none.
+  `runes` carries the Dunes balance under the upstream key. `sat_ranges` is
+  `null` without `--index-sats`. `spent` comes from the unspent-output table
+  of the index, not from the node.
+- Like the inscription detail, this route answers exact JSON numbers because
+  upstream does and its consumers parse them from the JSON source text.
+- An unknown transaction, a vout beyond the transaction, or a malformed
+  outpoint is `404 {"error":"output not found"}`.
 
 ### `GET /api/v1/drc20/tokens`
 
@@ -114,6 +215,73 @@ One deployment, same item contract as the catalog.
 
 Holder balances for one ticker in atomic units, split into `overall_atomic`,
 `transferable_atomic` and `available_atomic`.
+
+### `GET /api/v1/drc20/operations/{inscriptionId}`
+
+Was this exact DRC-20 operation accepted or rejected by the ledger, and why.
+
+```json
+{
+  "inscriptionId": "<txid>i0",
+  "txid": "<txid>",
+  "index": 0,
+  "operation": "mint",
+  "tick": "abcd",
+  "amount": "10",
+  "verdict": "accepted",
+  "reason": null,
+  "ruleset": "drc20-v1",
+  "checkpoint": { "height": 5700123, "blockHash": "..." },
+  "reorgEpoch": 0,
+  "coverage": { "decisionsFromHeight": 5700000, "indexedHeight": 5700400 }
+}
+```
+
+The verdict is written in the **same write transaction** as the ledger
+change it explains, by the same code path that applied or refused the
+operation, so balances and verdicts can never disagree. A reorg that
+restores a savepoint rolls both back together; re-indexing re-derives both.
+
+| `verdict` | Meaning |
+| --- | --- |
+| `accepted` | The ledger applied this operation. `amount` is the ledger-effective atomic amount for mint (after the supply cut-off), inscribe-transfer and transfer; `null` for deploy. |
+| `rejected` | The ledger refused it. `reason` is the protocol error, for example `amount exceed limit: 11`, `tick: zzzz not found`, `insufficient balance: 10 100`, `tick: abcd has been existed`. Nothing changed. |
+| `not-evaluated` | No verdict is retained. `reason` is `drc20-index-disabled` (database created without `--index-drc20`), `outside-decision-coverage` (the block predates `decisionsFromHeight`) or `not-a-drc20-operation` (the block was evaluated and the inscription carries no DRC-20 operation). `operation`, `tick` and `amount` are `null`; `checkpoint` is the inscription's block. |
+
+`not-evaluated` is neither acceptance nor rejection. A consumer must not read
+the ledger backwards to invent a verdict for it, and must not treat an
+inscription's `metaprotocol` marker as acceptance.
+
+`404` means the inscription is not indexed at all.
+
+An inscription carries at most two operations: its own deploy, mint or
+inscribe-transfer (whose `txid` is the inscription's txid, which is what this
+route answers) and, for an inscribe-transfer, its first transfer in a later
+transaction. The transfer's verdict is listed by the collection route.
+
+`reorgEpoch` counts the savepoint rollbacks the index had performed when the
+verdict was recorded. A verdict re-derived after a rollback carries a higher
+value than the one it replaced; a verdict below the fork point that survived
+inside the restored savepoint keeps its value, because it was not
+re-evaluated.
+
+### `GET /api/v1/drc20/operations?txid={txid}`
+
+Every retained verdict for the operations one transaction carried, as
+`{ "txid", "decisions": [...], "coverage": {...} }`. A transaction can
+inscribe one operation and spend several inscribe-transfer inscriptions at
+once; each is a separate record. An empty `decisions` list is not a
+rejection: `coverage` says whether the index could have retained one.
+Returns `400` without a valid `txid`, or on a database created without
+`--index-drc20`.
+
+#### Coverage without a rebuild
+
+An existing database gains the decision table on its first indexed block
+after the upgrade, and records that height as `decisionsFromHeight`. Nothing
+before it is backfilled, because the historical ledger state needed to
+re-decide those operations no longer exists; those operations are reported as
+`outside-decision-coverage` rather than inferred from today's balances.
 
 ### `GET /api/v1/drc20/transferables`
 

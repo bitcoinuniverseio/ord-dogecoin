@@ -20,6 +20,9 @@ defaults:
 
 jobs:
   lint:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -30,7 +33,7 @@ jobs:
       - name: Format
         run: rustfmt --check tests/compatibility.rs
       - name: Clippy
-        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --all-features
+        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --test drc20-decisions --test inscription-json --all-features
       - name: Check for forbidden words
         run: ./bin/forbid
       - name: Validate AWS Dogecoin migration controls
@@ -65,10 +68,10 @@ jobs:
             deploy/aws-doge-index/controller/controller.py
 
   test-linux:
-    # The six ultra runner registrations share one physical VM. Keep Rust
-    # compiles serial so independent logical runners cannot corrupt each
-    # other's shared toolchain and temporary build state under pressure.
     needs: [lint]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -80,14 +83,21 @@ jobs:
         run: cargo test --locked --test compatibility
       - name: Test authority API contract
         run: cargo test --locked --test authority-api-contract
+      - name: Test DRC-20 operation decisions end to end
+        run: cargo test --locked --test drc20-decisions
+      - name: Test the JSON inscription detail end to end
+        run: cargo test --locked --test inscription-json
 
-  # test-windows is removed. The approved runner architecture is the permanent
-  # self-managed GCP runner platform and the host-pinned local fleet, and neither offers
-  # Windows capacity. The self-hosted Windows machines are the CI control plane
-  # and must not carry workspace compiles. Universe runs this indexer on Linux.
+  # test-windows is removed. The approved runner architecture is the self-hosted
+  # fleet (Primcast and PowerVPS), and neither offers Windows capacity. The self-hosted
+  # Windows machines are the CI control plane and must not carry workspace compiles.
+  # Universe runs this indexer on Linux.
 
   docs:
     needs: [test-linux]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -95,12 +105,29 @@ jobs:
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
       - name: Install documentation toolchain
         run: |
-          cargo install --locked mdbook --version 0.4.52
-          cargo install --locked mdbook-linkcheck --version 0.7.7
+          # cargo install lands in $CARGO_HOME/bin, which the self-hosted
+          # runner does not carry on PATH unless the toolchain action had to
+          # install rustup itself.
+          bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$bin" >> "$GITHUB_PATH"
+          export PATH="$bin:$PATH"
+          # The runners share one CARGO_HOME, and the host reclaims stale
+          # /tmp/cargo-install* directories while a build may still be using
+          # them, which fails the install and removes the previous binary.
+          # Only compile when the pinned version is not already there.
+          if [ "$(mdbook --version 2>/dev/null)" != "mdbook v0.4.52" ]; then
+            cargo install --locked mdbook --version 0.4.52
+          fi
+          if ! command -v mdbook-linkcheck >/dev/null 2>&1; then
+            cargo install --locked mdbook-linkcheck --version 0.7.7
+          fi
       - run: mdbook build docs
 
   release:
     needs: [docs]
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, linux, x64, universe-super]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
