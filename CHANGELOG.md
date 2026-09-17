@@ -25,6 +25,13 @@ Unreleased (Bitcoin Universe fork)
   The explorer overlay's outpoint enrichment reads this route as it reads
   upstream and was labelling every Dogecoin holding out of coverage against
   the HTML answer.
+- `GET /status` answers the upstream `ord` status document under
+  `Accept: application/json` (`height`, `inscription_index`, `rune_index`,
+  `sat_index`, `transaction_index`, `address_index`, `drc20_index`,
+  `unrecoverably_reorged`, `chain`, `network`); the plain-text answer for
+  probes is unchanged. `GET /blockhash` and `GET /blockhash/{height}` answer
+  the block hash as bare text, as upstream does. The overlay reads both
+  before it trusts any output read.
 - `tests/inscription_json.rs`: an end-to-end regtest suite covering the
   negotiated detail, the HTML fallback, the JSON 404 and the `/api/v1` alias.
 - Retain a per-operation DRC-20 decision (accepted, or rejected with the

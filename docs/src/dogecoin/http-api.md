@@ -140,6 +140,16 @@ those two routes keep serving HTML for browsers.
   from the JSON source text. `serde_json` prints a `u64` without rounding.
 - An unknown or malformed id is `404 {"error":"inscription not found"}`.
 
+### `GET /status` and `GET /blockhash`
+
+Under `Accept: application/json`, `GET /status` answers the upstream `ord`
+status document: `chain`, `network`, `height` (the last indexed height, `null`
+before the first block), `address_index`, `inscription_index`, `rune_index`
+(the Dunes index), `sat_index`, `transaction_index`, `drc20_index` and
+`unrecoverably_reorged`. Without the header it stays the plain `OK` text that
+liveness probes read. `GET /blockhash` and `GET /blockhash/{height}` answer the
+block hash as bare text.
+
 ### `GET /api/v1/outputs/{outpoint}`
 
 One transaction output in the field layout upstream `ord` answers for
