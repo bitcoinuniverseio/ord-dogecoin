@@ -32,6 +32,13 @@ Unreleased (Bitcoin Universe fork)
   probes is unchanged. `GET /blockhash` and `GET /blockhash/{height}` answer
   the block hash as bare text, as upstream does. The overlay reads both
   before it trusts any output read.
+
+### Fixed
+- `GET /outputs/{list}`, `GET /outputs/address/{address}` and
+  `GET /blocks/{from}/{to}` answer their JSON with the `application/json`
+  content type instead of `text/plain`. The explorer overlay refuses a JSON
+  body labelled as text, so every Dogecoin holding read through the batch
+  route was reported out of coverage.
 - `tests/inscription_json.rs`: an end-to-end regtest suite covering the
   negotiated detail, the HTML fallback, the JSON 404 and the `/api/v1` alias.
 - Retain a per-operation DRC-20 decision (accepted, or rejected with the

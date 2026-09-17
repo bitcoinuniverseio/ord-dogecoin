@@ -495,3 +495,32 @@ fn status_and_blockhash_answer_the_upstream_layout() {
   let (status, _, _) = server.get("/blockhash/99", None).unwrap();
   assert_eq!(status, 404);
 }
+
+/// The batch output route answers JSON with the JSON content type. The
+/// explorer's client refuses a JSON body labelled text/plain, which is what
+/// this route used to send, so every Dogecoin holding was out of coverage.
+#[test]
+fn the_batch_output_route_is_labelled_json() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(1);
+  let txid = inscribe(rpc, (1, 0, 0), "hello from a batched output");
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(3);
+
+  let (status, content_type, body) = server.get(&format!("/outputs/{txid}:0"), None).unwrap();
+  assert_eq!(status, 200, "{body}");
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+  let outputs: Value = serde_json::from_str(&body).unwrap();
+  assert_eq!(outputs[0]["transaction"], txid.to_string());
+  assert_eq!(
+    outputs[0]["inscriptions"],
+    serde_json::json!([format!("{txid}i0")])
+  );
+
+  let (status, content_type, _) = server.get("/blocks/0/2", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+}
