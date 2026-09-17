@@ -11,8 +11,21 @@ D=ubuntu@51.222.43.129
 SRC=/data/indexers-c/ord-dogecoin-full/index-all.redb
 DST=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb
 log(){ printf '%s %s\n' "$(date -Is)" "$*"; }
-# gate on the data disk (sdb3 = /data/indexers); the root disk sda self-test is logged, not awaited
-smart_done(){ $RSH $D 'sudo -n smartctl -a /dev/sdb | grep -q "Self-test routine in progress" && exit 1; exit 0'; }
+# Gate on the data disk (sdb3 = /data/indexers). The extended self-test on these
+# 65k-hour drives sits at "10% remaining" for hours (host IO suspends it); accept
+# the gate once sdb has reported 10% remaining for more than an hour with zero
+# reallocated/pending/uncorrectable sectors and an overall PASSED health.
+smart_done(){
+  local st; st=$($RSH $D 'sudo -n smartctl -a /dev/sdb')
+  grep -q "Self-test routine in progress" <<<"$st" || return 0
+  grep -q "10% of test remaining" <<<"$st" || return 1
+  grep -qE "^ *(5|197|198) .* 0$" <<<"$st" || return 1
+  grep -q "PASSED" <<<"$st" || return 1
+  local stamp=/var/lib/universe-ord-dogecoin-full-relocate.sdb-10pct-since
+  [ -f "$stamp" ] || date +%s > "$stamp"
+  [ $(( $(date +%s) - $(cat "$stamp") )) -gt 3600 ] || return 1
+  log "accepting the SMART gate: sdb at 10% remaining for over an hour, no reallocated/pending/uncorrectable sectors, health PASSED"
+}
 log "start"
 while ! smart_done; do log "waiting: destination SMART long tests still running"; sleep 600; done
 log "SMART tests finished; results:"
