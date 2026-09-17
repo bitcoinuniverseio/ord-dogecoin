@@ -17,7 +17,7 @@ use {
       Drc20TransactionDecisions, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionDetail, InscriptionInventory, InscriptionInventoryItem,
-      InventoryLocation, resolved_content_metadata,
+      InventoryLocation, OutputDetail, OutputDuneBalance, resolved_content_metadata,
     },
     drc20::{script_key::ScriptKey, OperationDecision, Tick, DRC20_RULESET},
     page_config::PageConfig,
@@ -46,7 +46,6 @@ use {
     caches::DirCache,
     AcmeConfig,
   },
-  serde_json::to_string,
   std::collections::HashMap,
   std::{cmp::Ordering, str},
   tokio_stream::StreamExt,
@@ -346,6 +345,7 @@ impl Server {
           "/api/v1/inscriptions/:inscription_id",
           get(Self::inscription_detail),
         )
+        .route("/api/v1/outputs/:outpoint", get(Self::output_detail))
         .route(
           "/api/v1/drc20/transferables",
           get(Self::drc20_transferable_inventory),
@@ -429,6 +429,8 @@ impl Server {
         .route("/search/*query", get(Self::search_by_path))
         .route("/static/*path", get(Self::static_asset))
         .route("/status", get(Self::status))
+        .route("/blockhash", get(Self::blockhash))
+        .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
         .layer(Extension(page_config))
@@ -634,11 +636,104 @@ impl Server {
     Redirect::to(&format!("/sat/{sat}"))
   }
 
+  fn output_not_found_json() -> Response {
+    (
+      StatusCode::NOT_FOUND,
+      Json(json!({ "error": "output not found" })),
+    )
+      .into_response()
+  }
+
+  async fn output_detail(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(outpoint): Path<String>,
+  ) -> ServerResult<Response> {
+    Self::output_detail_response(&page_config, &index, &outpoint)
+  }
+
+  fn output_detail_response(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: &str,
+  ) -> ServerResult<Response> {
+    let Ok(outpoint) = OutPoint::from_str(outpoint) else {
+      return Ok(Self::output_not_found_json());
+    };
+    match Self::output_detail_for(page_config, index, outpoint)? {
+      Some(detail) => Ok(Json(detail).into_response()),
+      None => Ok(Self::output_not_found_json()),
+    }
+  }
+
+  fn output_detail_for(
+    page_config: &PageConfig,
+    index: &Index,
+    outpoint: OutPoint,
+  ) -> ServerResult<Option<OutputDetail>> {
+    let Some(transaction) = index.get_transaction(outpoint.txid)? else {
+      return Ok(None);
+    };
+    let Some(output) = transaction.output.into_iter().nth(outpoint.vout as usize) else {
+      return Ok(None);
+    };
+    let Some(unspent) = index.is_output_unspent(outpoint)? else {
+      return Ok(None);
+    };
+    let sat_ranges = match index.list(outpoint)? {
+      Some(List::Unspent(ranges)) => Some(ranges),
+      _ => None,
+    };
+    let inscriptions = index
+      .get_inscriptions_on_output(outpoint)?
+      .into_iter()
+      .map(|id| id.to_string())
+      .collect();
+    let runes = index
+      .get_dune_balances_for_outpoint(outpoint)?
+      .into_iter()
+      .map(|(dune, pile)| {
+        (
+          dune.to_string(),
+          OutputDuneBalance {
+            amount: pile.amount,
+            divisibility: pile.divisibility,
+            symbol: pile.symbol,
+          },
+        )
+      })
+      .collect();
+    Ok(Some(OutputDetail {
+      chain: "dogecoin",
+      network: page_config.chain.to_string(),
+      outpoint: outpoint.to_string(),
+      address: page_config
+        .chain
+        .address_from_script(&output.script_pubkey)
+        .ok()
+        .map(|address| address.to_string()),
+      indexed: true,
+      inscriptions,
+      runes,
+      sat_ranges,
+      script_pubkey: output.script_pubkey.asm(),
+      spent: !unspent,
+      transaction: outpoint.txid.to_string(),
+      value: output.value,
+    }))
+  }
+
   async fn output(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
-    Path(outpoint): Path<OutPoint>,
-  ) -> ServerResult<PageHtml<OutputHtml>> {
+    Path(outpoint): Path<String>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      return Self::output_detail_response(&page_config, &index, &outpoint);
+    }
+    let outpoint = OutPoint::from_str(&outpoint)
+      .map_err(|err| ServerError::BadRequest(format!("invalid outpoint: {err}")))?;
     let list = index.list(outpoint)?;
 
     let output = if outpoint == OutPoint::null() {
@@ -677,7 +772,8 @@ impl Server {
         output,
         dunes,
       }
-      .page(page_config),
+      .page(page_config)
+      .into_response(),
     )
   }
 
@@ -1273,22 +1369,20 @@ impl Server {
   async fn outputs_by_address(
     Extension(index): Extension<Arc<Index>>,
     Path(address): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let mut outputs = vec![];
     let outpoints = index.get_account_outputs(address)?;
 
     outputs.push(AddressOutputJson::new(outpoints));
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    Ok(Json(outputs).into_response())
   }
 
   async fn outputs(
     Extension(server_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
     Path(outpoints_str): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let outpoints: Vec<OutPoint> = outpoints_str
       .split(',')
       .map(|s| OutPoint::from_str(s).expect("Failed to parse OutPoint"))
@@ -1333,9 +1427,9 @@ impl Server {
       ))
     }
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    // JSON with the JSON content type: the explorer's client refuses a JSON
+    // body labelled text/plain.
+    Ok(Json(outputs).into_response())
   }
 
   async fn drc20_tick_info(
@@ -1909,7 +2003,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(path): Path<(u32, u32)>,
     Query(query): Query<BlocksQuery>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let (height, endheight) = path;
     let mut blocks = vec![];
     for height in height..endheight {
@@ -2098,9 +2192,7 @@ impl Server {
     }
 
     // This will convert the Vec<BlocksJson> into a JSON string
-    let blocks_json = to_string(&blocks).context("Failed to serialize blocks")?;
-
-    Ok(blocks_json)
+    Ok(Json(blocks).into_response())
   }
 
   async fn transaction(
@@ -2137,18 +2229,60 @@ impl Server {
     })
   }
 
-  async fn status(Extension(index): Extension<Arc<Index>>) -> (StatusCode, &'static str) {
-    if index.is_unrecoverably_reorged() {
-      (
-        StatusCode::OK,
-        "unrecoverable reorg detected, please rebuild the database.",
-      )
-    } else {
-      (
-        StatusCode::OK,
-        StatusCode::OK.canonical_reason().unwrap_or_default(),
-      )
+  async fn status(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      // The upstream `ord` status document, so a consumer written against it
+      // reads this fork's index availability unchanged. `height` is the last
+      // indexed height, null before the first block is indexed.
+      let block_count = index.block_count()?;
+      return Ok(
+        Json(json!({
+          "chain": "dogecoin",
+          "network": page_config.chain.to_string(),
+          "height": block_count.checked_sub(1),
+          "address_index": true,
+          "inscription_index": true,
+          "rune_index": index.has_dune_index(),
+          "sat_index": index.has_sat_index(),
+          "transaction_index": index.has_transaction_index(),
+          "drc20_index": index.has_drc20_index(),
+          "unrecoverably_reorged": index.is_unrecoverably_reorged(),
+        }))
+        .into_response(),
+      );
     }
+    let text = if index.is_unrecoverably_reorged() {
+      "unrecoverable reorg detected, please rebuild the database."
+    } else {
+      StatusCode::OK.canonical_reason().unwrap_or_default()
+    };
+    Ok((StatusCode::OK, text).into_response())
+  }
+
+  /// The tip block hash as bare text, as upstream `ord` answers it.
+  async fn blockhash(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(None)?
+        .ok_or_not_found(|| "blockhash".to_string())?
+        .to_string(),
+    )
+  }
+
+  async fn blockhash_at_height(
+    Extension(index): Extension<Arc<Index>>,
+    Path(height): Path<u32>,
+  ) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(Some(height))?
+        .ok_or_not_found(|| format!("blockhash {height}"))?
+        .to_string(),
+    )
   }
 
   async fn search_by_query(

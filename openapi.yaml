@@ -198,6 +198,42 @@ paths:
                   error:
                     type: string
                     enum: ['inscription not found']
+  /api/v1/outputs/{outpoint}:
+    get:
+      summary: Get one transaction output in the upstream ord JSON layout
+      description: >-
+        The same document GET /output/{outpoint} answers under
+        Accept: application/json, always as JSON. Field names follow upstream
+        ord so a consumer written against it reads this fork unchanged: runes
+        carries the Dunes balance of the output under the upstream key,
+        sat_ranges is null without --index-sats, and every integer is an
+        exact JSON number.
+      operationId: getOutputDetail
+      parameters:
+        - name: outpoint
+          in: path
+          required: true
+          description: Outpoint as txid:vout
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OutputDetail'
+        '404':
+          description: The index does not know the transaction, the vout is out of range, or the outpoint is malformed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+                    enum: ['output not found']
   /api/v1/drc20/transferables:
     get:
       summary: List every outstanding DRC-20 transferable inscription
@@ -1873,6 +1909,77 @@ components:
             - $ref: '#/components/schemas/InventoryLocation'
           nullable: true
           description: Null when the inscription sits on lost value
+    OutputDetail:
+      type: object
+      description: >-
+        One transaction output in the field layout upstream ord answers for
+        GET /output/{outpoint} under Accept application/json. Integers are
+        exact JSON numbers.
+      required:
+        - chain
+        - network
+        - outpoint
+        - address
+        - indexed
+        - inscriptions
+        - runes
+        - sat_ranges
+        - script_pubkey
+        - spent
+        - transaction
+        - value
+      properties:
+        chain:
+          type: string
+          enum: [dogecoin]
+        network:
+          type: string
+        outpoint:
+          type: string
+          description: txid:vout
+        address:
+          type: string
+          nullable: true
+          description: Null when the script is not an address
+        indexed:
+          type: boolean
+        inscriptions:
+          type: array
+          items:
+            type: string
+          description: Inscription ids currently on the output
+        runes:
+          type: object
+          description: Dunes on the output, keyed by spaced dune name
+          additionalProperties:
+            type: object
+            required: [amount, divisibility, symbol]
+            properties:
+              amount:
+                type: integer
+              divisibility:
+                type: integer
+              symbol:
+                type: string
+                nullable: true
+        sat_ranges:
+          type: array
+          nullable: true
+          description: Null without --index-sats
+          items:
+            type: array
+            items:
+              type: integer
+        script_pubkey:
+          type: string
+          description: The output script as assembly
+        spent:
+          type: boolean
+        transaction:
+          type: string
+        value:
+          type: integer
+          description: Value in koinu
     InscriptionDetail:
       type: object
       description: >-

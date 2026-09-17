@@ -7,7 +7,7 @@
 //! field layout and the `/api/v1` alias are proved over HTTP.
 
 use {
-  bitcoin::{blockdata::script::Builder, Network, Script, Txid},
+  bitcoin::{blockdata::script::Builder, hashes::Hash, Network, Script, Txid},
   executable_path::executable_path,
   reqwest::{blocking::Client, header},
   serde_json::Value,
@@ -364,4 +364,163 @@ fn the_api_v1_alias_equals_the_negotiated_body() {
     assert_eq!(content_type.as_deref(), Some("application/json"));
     assert_eq!(serde_json::from_str::<Value>(&body).unwrap(), negotiated);
   }
+}
+
+/// The explorer's outpoint enrichment reads `GET /output/:outpoint` with
+/// `Accept: application/json` as it does against upstream `ord`: the
+/// inscriptions on the output, its spent state, value, script and address.
+#[test]
+fn accept_json_answers_the_upstream_output_detail() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(2);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x33; 20]).unwrap());
+  let inscribed = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    script_sig: inscription_script("text/plain;charset=utf-8", "hello from an output"),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  // Block 4 spends the inscribed output onwards; block 5 has an untouched one.
+  let spend = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(3, 1, 0)],
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(5);
+
+  let inscription_id = format!("{inscribed}i0");
+  let expected_address = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+
+  // The spent genesis output: no inscription is on it any more.
+  let (status, content_type, detail) = server.json(&format!("/output/{inscribed}:0"));
+  assert_eq!(status, 200, "{detail}");
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+  assert_eq!(detail["outpoint"], format!("{inscribed}:0"));
+  assert_eq!(detail["spent"], true);
+  assert_eq!(detail["indexed"], true);
+  assert_eq!(detail["transaction"], inscribed.to_string());
+  assert_eq!(detail["address"], expected_address);
+  assert_eq!(detail["inscriptions"], Value::Array(Vec::new()));
+  assert_eq!(detail["runes"], serde_json::json!({}));
+  assert_eq!(detail["sat_ranges"], Value::Null);
+  assert!(detail["value"].is_u64(), "{detail}");
+  assert!(
+    detail["script_pubkey"]
+      .as_str()
+      .unwrap()
+      .starts_with("OP_DUP OP_HASH160"),
+    "{detail}"
+  );
+  assert_eq!(detail["chain"], "dogecoin");
+  assert_eq!(detail["network"], "regtest");
+
+  // The current output carries the inscription and is unspent.
+  let (status, _, current) = server.json(&format!("/output/{spend}:0"));
+  assert_eq!(status, 200, "{current}");
+  assert_eq!(current["spent"], false);
+  assert_eq!(current["inscriptions"], serde_json::json!([inscription_id]));
+  assert_eq!(current["address"], expected_address);
+
+  // The /api/v1 alias equals the negotiated body.
+  let (status, _, alias) = server.json(&format!("/api/v1/outputs/{spend}:0"));
+  assert_eq!(status, 200);
+  assert_eq!(alias, current);
+
+  // Unknown or malformed outpoints are a JSON 404, never HTML.
+  for path in [
+    format!("/output/{}:0", "f".repeat(64)),
+    "/output/not-an-outpoint".to_string(),
+    format!("/api/v1/outputs/{}:7", "f".repeat(64)),
+  ] {
+    let (status, content_type, body) = server.json(&path);
+    assert_eq!(status, 404, "{path}: {body}");
+    assert_eq!(content_type.as_deref(), Some("application/json"));
+    assert_eq!(body, serde_json::json!({ "error": "output not found" }));
+  }
+
+  // Browsers keep the HTML page.
+  let (status, content_type, body) = server.get(&format!("/output/{spend}:0"), None).unwrap();
+  assert_eq!(status, 200, "{body}");
+  assert_eq!(content_type.as_deref(), Some("text/html;charset=utf-8"));
+  assert!(body.contains("<title>Output"), "{body}");
+}
+
+/// The explorer's outpoint enrichment reads `/status` and `/blockhash` the
+/// way upstream `ord` answers them: the index availability flags and the
+/// indexed height as JSON under `Accept: application/json`, the tip hash as
+/// bare text. The plain-text `/status` answer for probes is unchanged.
+#[test]
+fn status_and_blockhash_answer_the_upstream_layout() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  let blocks = rpc.mine_blocks(3);
+  let tip = blocks.last().unwrap().header.block_hash().to_string();
+
+  let server = chain.serve();
+  server.wait_for_block_count(4);
+
+  let (status, content_type, body) = server.json("/status");
+  assert_eq!(status, 200, "{body}");
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+  assert_eq!(body["chain"], "dogecoin");
+  assert_eq!(body["network"], "regtest");
+  assert_eq!(body["height"], 3);
+  assert_eq!(body["inscription_index"], true);
+  assert_eq!(body["address_index"], true);
+  assert_eq!(body["rune_index"], false);
+  assert_eq!(body["sat_index"], false);
+  assert_eq!(body["transaction_index"], true);
+  // This harness starts ord without --index-drc20, so the flag is reported off.
+  assert_eq!(body["drc20_index"], false);
+  assert_eq!(body["unrecoverably_reorged"], false);
+
+  let (status, _, text) = server.get("/status", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(text, "OK");
+
+  let (status, _, hash) = server.get("/blockhash", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(hash, tip);
+  let (status, _, genesis) = server.get("/blockhash/0", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(genesis.len(), 64);
+  let (status, _, _) = server.get("/blockhash/99", None).unwrap();
+  assert_eq!(status, 404);
+}
+
+/// The batch output route answers JSON with the JSON content type. The
+/// explorer's client refuses a JSON body labelled text/plain, which is what
+/// this route used to send, so every Dogecoin holding was out of coverage.
+#[test]
+fn the_batch_output_route_is_labelled_json() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(1);
+  let txid = inscribe(rpc, (1, 0, 0), "hello from a batched output");
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(3);
+
+  let (status, content_type, body) = server.get(&format!("/outputs/{txid}:0"), None).unwrap();
+  assert_eq!(status, 200, "{body}");
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+  let outputs: Value = serde_json::from_str(&body).unwrap();
+  assert_eq!(outputs[0]["transaction"], txid.to_string());
+  assert_eq!(
+    outputs[0]["inscriptions"],
+    serde_json::json!([format!("{txid}i0")])
+  );
+
+  let (status, content_type, _) = server.get("/blocks/0/2", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(content_type.as_deref(), Some("application/json"));
 }
