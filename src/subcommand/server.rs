@@ -430,6 +430,8 @@ impl Server {
         .route("/search/*query", get(Self::search_by_path))
         .route("/static/*path", get(Self::static_asset))
         .route("/status", get(Self::status))
+        .route("/blockhash", get(Self::blockhash))
+        .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
         .layer(Extension(page_config))
@@ -2232,18 +2234,60 @@ impl Server {
     })
   }
 
-  async fn status(Extension(index): Extension<Arc<Index>>) -> (StatusCode, &'static str) {
-    if index.is_unrecoverably_reorged() {
-      (
-        StatusCode::OK,
-        "unrecoverable reorg detected, please rebuild the database.",
-      )
-    } else {
-      (
-        StatusCode::OK,
-        StatusCode::OK.canonical_reason().unwrap_or_default(),
-      )
+  async fn status(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    headers: HeaderMap,
+  ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      // The upstream `ord` status document, so a consumer written against it
+      // reads this fork's index availability unchanged. `height` is the last
+      // indexed height, null before the first block is indexed.
+      let block_count = index.block_count()?;
+      return Ok(
+        Json(json!({
+          "chain": "dogecoin",
+          "network": page_config.chain.to_string(),
+          "height": block_count.checked_sub(1),
+          "address_index": true,
+          "inscription_index": true,
+          "rune_index": index.has_dune_index(),
+          "sat_index": index.has_sat_index(),
+          "transaction_index": index.has_transaction_index(),
+          "drc20_index": index.has_drc20_index(),
+          "unrecoverably_reorged": index.is_unrecoverably_reorged(),
+        }))
+        .into_response(),
+      );
     }
+    let text = if index.is_unrecoverably_reorged() {
+      "unrecoverable reorg detected, please rebuild the database."
+    } else {
+      StatusCode::OK.canonical_reason().unwrap_or_default()
+    };
+    Ok((StatusCode::OK, text).into_response())
+  }
+
+  /// The tip block hash as bare text, as upstream `ord` answers it.
+  async fn blockhash(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(None)?
+        .ok_or_not_found(|| "blockhash".to_string())?
+        .to_string(),
+    )
+  }
+
+  async fn blockhash_at_height(
+    Extension(index): Extension<Arc<Index>>,
+    Path(height): Path<u32>,
+  ) -> ServerResult<String> {
+    Ok(
+      index
+        .block_hash(Some(height))?
+        .ok_or_not_found(|| format!("blockhash {height}"))?
+        .to_string(),
+    )
   }
 
   async fn search_by_query(

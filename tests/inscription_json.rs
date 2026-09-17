@@ -452,3 +452,46 @@ fn accept_json_answers_the_upstream_output_detail() {
   assert_eq!(content_type.as_deref(), Some("text/html;charset=utf-8"));
   assert!(body.contains("<title>Output"), "{body}");
 }
+
+/// The explorer's outpoint enrichment reads `/status` and `/blockhash` the
+/// way upstream `ord` answers them: the index availability flags and the
+/// indexed height as JSON under `Accept: application/json`, the tip hash as
+/// bare text. The plain-text `/status` answer for probes is unchanged.
+#[test]
+fn status_and_blockhash_answer_the_upstream_layout() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  let blocks = rpc.mine_blocks(3);
+  let tip = blocks.last().unwrap().header.block_hash().to_string();
+
+  let server = chain.serve();
+  server.wait_for_block_count(4);
+
+  let (status, content_type, body) = server.json("/status");
+  assert_eq!(status, 200, "{body}");
+  assert_eq!(content_type.as_deref(), Some("application/json"));
+  assert_eq!(body["chain"], "dogecoin");
+  assert_eq!(body["network"], "regtest");
+  assert_eq!(body["height"], 3);
+  assert_eq!(body["inscription_index"], true);
+  assert_eq!(body["address_index"], true);
+  assert_eq!(body["rune_index"], false);
+  assert_eq!(body["sat_index"], false);
+  assert_eq!(body["transaction_index"], true);
+  // This harness starts ord without --index-drc20, so the flag is reported off.
+  assert_eq!(body["drc20_index"], false);
+  assert_eq!(body["unrecoverably_reorged"], false);
+
+  let (status, _, text) = server.get("/status", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(text, "OK");
+
+  let (status, _, hash) = server.get("/blockhash", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(hash, tip);
+  let (status, _, genesis) = server.get("/blockhash/0", None).unwrap();
+  assert_eq!(status, 200);
+  assert_eq!(genesis.len(), 64);
+  let (status, _, _) = server.get("/blockhash/99", None).unwrap();
+  assert_eq!(status, 404);
+}
