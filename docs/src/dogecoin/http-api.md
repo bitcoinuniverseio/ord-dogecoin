@@ -91,6 +91,55 @@ instances. If `SUBSIDIES_PATH` is unset the endpoint returns 400.
 When an inscription delegates its content, `content_type` and `content_length`
 describe the **delegate's** bytes, which is what `/content` will actually serve.
 
+### `GET /api/v1/inscriptions/{inscription_id}`
+
+One inscription in the field layout upstream `ord` answers for
+`GET /inscription/{id}` under `Accept: application/json`, so a consumer written
+against upstream reads this fork unchanged. The same document is what
+`GET /inscription/{inscription_id}` and `GET /shibescription/{inscription_id}`
+answer when the request carries `Accept: application/json`; without that header
+those two routes keep serving HTML for browsers.
+
+```json
+{
+  "chain": "dogecoin",
+  "network": "mainnet",
+  "id": "<txid>i0",
+  "number": 12345,
+  "address": "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq",
+  "content_type": "text/plain;charset=utf-8",
+  "content_length": 42,
+  "height": 4600000,
+  "fee": 2500000000,
+  "value": 100000,
+  "sat": null,
+  "satpoint": "<txid>:0:0",
+  "output": "<txid>:0",
+  "genesis_transaction": "<txid>",
+  "timestamp": 1700000000,
+  "charms": [],
+  "parents": [],
+  "child_count": 0,
+  "rune": null,
+  "metaprotocol": null,
+  "previous": "<txid>i0",
+  "next": null
+}
+```
+
+- `height`, `fee` and `timestamp` describe the genesis block and transaction;
+  `value`, `satpoint`, `output` and `address` describe the current location.
+  `address` is `null` when the current output is not an address, `sat` is
+  `null` without `--index-sats`, and `previous` and `next` are the ids of the
+  inscriptions numbered one lower and one higher, or `null`.
+- `charms`, `parents`, `child_count`, `rune` and `metaprotocol` exist for
+  layout compatibility with upstream and are always empty, `0` or `null`: this
+  fork does not index them.
+- This route is the one exception to rule 1. Its integers are exact JSON
+  numbers because upstream answers them that way and its consumers parse them
+  from the JSON source text. `serde_json` prints a `u64` without rounding.
+- An unknown or malformed id is `404 {"error":"inscription not found"}`.
+
 ### `GET /api/v1/drc20/tokens`
 
 | Parameter | Type | Default | Bound |

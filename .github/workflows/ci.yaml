@@ -33,7 +33,7 @@ jobs:
       - name: Format
         run: rustfmt --check tests/compatibility.rs
       - name: Clippy
-        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --test drc20-decisions --all-features
+        run: cargo clippy --locked -p ord-dogecoin --lib --bin ord --test compatibility --test authority-api-contract --test drc20-decisions --test inscription-json --all-features
       - name: Check for forbidden words
         run: ./bin/forbid
       - name: Validate AWS Dogecoin migration controls
@@ -85,6 +85,8 @@ jobs:
         run: cargo test --locked --test authority-api-contract
       - name: Test DRC-20 operation decisions end to end
         run: cargo test --locked --test drc20-decisions
+      - name: Test the JSON inscription detail end to end
+        run: cargo test --locked --test inscription-json
 
   # test-windows is removed. The approved runner architecture is the self-hosted
   # fleet (Primcast and PowerVPS), and neither offers Windows capacity. The self-hosted
@@ -105,6 +107,10 @@ jobs:
         run: |
           cargo install --locked mdbook --version 0.4.52
           cargo install --locked mdbook-linkcheck --version 0.7.7
+          # cargo install lands in $CARGO_HOME/bin, which the self-hosted
+          # runner does not carry on PATH unless the toolchain action had to
+          # install rustup itself.
+          echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
       - run: mdbook build docs
 
   release:
