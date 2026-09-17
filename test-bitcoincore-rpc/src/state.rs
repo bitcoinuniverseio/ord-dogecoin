@@ -175,7 +175,7 @@ impl State {
             .get(i)
             .cloned()
             .unwrap_or(value_per_output),
-          script_pubkey: script::Builder::new().into_script(),
+          script_pubkey: template.output_script.clone(),
         })
         .collect(),
     };

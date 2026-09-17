@@ -674,3 +674,60 @@ fn a_database_without_the_drc20_index_reports_decisions_as_disabled() {
   let (status, _) = server.json(&format!("/api/v1/drc20/operations?txid={deploy}"));
   assert_eq!(status, 400);
 }
+
+/// The ledger keys holders by address string. On regtest and testnet that
+/// string must carry the prefix of the indexed chain (m/n), not the mainnet D
+/// prefix: the explorer validates every address against the network of the
+/// request and would otherwise reject the deployer and every holder.
+#[test]
+fn holder_addresses_carry_the_prefix_of_the_indexed_chain() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(3);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x11; 20]).unwrap());
+  let expected = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+  assert!(
+    expected.starts_with('m') || expected.starts_with('n'),
+    "{expected}"
+  );
+
+  let deploy = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    script_sig: drc20(
+      r#"{"p":"drc-20","op":"deploy","tick":"abcd","max":"1000","lim":"10","dec":"0"}"#,
+    ),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  let mint = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(2, 0, 0)],
+    script_sig: drc20(r#"{"p":"drc-20","op":"mint","tick":"abcd","amt":"10","note":"valid-mint"}"#),
+    output_script: holder,
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(6);
+  assert_eq!(server.decision(deploy)["verdict"], "accepted");
+  assert_eq!(server.decision(mint)["verdict"], "accepted");
+
+  let (status, token) = server.json("/api/v1/drc20/tokens/abcd");
+  assert_eq!(status, 200, "{token}");
+  assert_eq!(token["token"]["deployed_by"], expected, "{token}");
+
+  let (status, holders) = server.json("/api/v1/drc20/tokens/abcd/holders");
+  assert_eq!(status, 200, "{holders}");
+  let holders = holders["holders"].as_array().unwrap();
+  assert_eq!(holders.len(), 1, "{holders:?}");
+  assert_eq!(holders[0]["address"], expected);
+  assert_eq!(holders[0]["overall_atomic"], "10");
+
+  // The same address, queried with its own prefix, answers the balance.
+  let (status, balance) = server.json(&format!("/drc20/balance/{expected}"));
+  assert_eq!(status, 200, "{balance}");
+}
