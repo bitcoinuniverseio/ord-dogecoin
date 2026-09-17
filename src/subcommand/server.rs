@@ -46,7 +46,6 @@ use {
     caches::DirCache,
     AcmeConfig,
   },
-  serde_json::to_string,
   std::collections::HashMap,
   std::{cmp::Ordering, str},
   tokio_stream::StreamExt,
@@ -1370,22 +1369,20 @@ impl Server {
   async fn outputs_by_address(
     Extension(index): Extension<Arc<Index>>,
     Path(address): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let mut outputs = vec![];
     let outpoints = index.get_account_outputs(address)?;
 
     outputs.push(AddressOutputJson::new(outpoints));
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    Ok(Json(outputs).into_response())
   }
 
   async fn outputs(
     Extension(server_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
     Path(outpoints_str): Path<String>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let outpoints: Vec<OutPoint> = outpoints_str
       .split(',')
       .map(|s| OutPoint::from_str(s).expect("Failed to parse OutPoint"))
@@ -1430,9 +1427,9 @@ impl Server {
       ))
     }
 
-    let outputs_json = to_string(&outputs).context("Failed to serialize outputs")?;
-
-    Ok(outputs_json)
+    // JSON with the JSON content type: the explorer's client refuses a JSON
+    // body labelled text/plain.
+    Ok(Json(outputs).into_response())
   }
 
   async fn drc20_tick_info(
@@ -2006,7 +2003,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(path): Path<(u32, u32)>,
     Query(query): Query<BlocksQuery>,
-  ) -> Result<String, ServerError> {
+  ) -> ServerResult<Response> {
     let (height, endheight) = path;
     let mut blocks = vec![];
     for height in height..endheight {
@@ -2195,9 +2192,7 @@ impl Server {
     }
 
     // This will convert the Vec<BlocksJson> into a JSON string
-    let blocks_json = to_string(&blocks).context("Failed to serialize blocks")?;
-
-    Ok(blocks_json)
+    Ok(Json(blocks).into_response())
   }
 
   async fn transaction(
