@@ -477,7 +477,11 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
       .ok_or(DRC20Error::TransferableNotFound(msg.inscription_id))?;
     let amt = Into::<Num>::into(transferable.amount);
 
-    if transferable.owner != msg.from {
+    // The stored owner round-trips through its address string, which the
+    // address parser tags with the network of its version byte (regtest is
+    // encoded with the testnet bytes), so compare the rendered keys rather
+    // than the address values.
+    if transferable.owner.to_string() != msg.from.to_string() {
       return Err(errors::Error::DRC20Error(
         DRC20Error::TransferableOwnerNotMatch(msg.inscription_id),
       ));
