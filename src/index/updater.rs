@@ -410,6 +410,7 @@ impl<'index> Updater<'_> {
     let mut drc20_token_balance = wtx.open_table(DRC20_BALANCES)?;
     let mut drc20_inscribe_transfer = wtx.open_table(DRC20_INSCRIBE_TRANSFER)?;
     let mut drc20_transferable_log = wtx.open_table(DRC20_TRANSFERABLELOG)?;
+    let mut drc20_operation_decisions = wtx.open_table(DRC20_OPERATION_DECISIONS)?;
 
     let mut lost_sats = statistic_to_count
       .get(&Statistic::LostSats.key())?
@@ -541,6 +542,24 @@ impl<'index> Updater<'_> {
       if index.index_drc20 && self.height >= index.first_inscription_height {
         let operations = inscription_updater.operations.clone();
 
+        // Decisions are retained from the first block this binary indexes
+        // with the table open. Recording the height here, in the block's own
+        // write transaction, lets an upgraded database report where its
+        // decision coverage starts without a rebuild.
+        if statistic_to_count
+          .get(&Statistic::Drc20DecisionsFromHeight.key())?
+          .is_none()
+        {
+          statistic_to_count.insert(
+            &Statistic::Drc20DecisionsFromHeight.key(),
+            &u64::from(self.height),
+          )?;
+        }
+        let reorg_epoch = statistic_to_count
+          .get(&Statistic::Reorgs.key())?
+          .map(|value| value.value())
+          .unwrap_or(0);
+
         // Create a protocol manager to index the block of drc20 data.
         Drc20Updater::new(
           &mut drc20_token_info,
@@ -548,6 +567,7 @@ impl<'index> Updater<'_> {
           &mut drc20_token_balance,
           &mut drc20_inscribe_transfer,
           &mut drc20_transferable_log,
+          &mut drc20_operation_decisions,
           &inscription_id_to_inscription_entry,
           &mut transaction_id_to_transaction,
         )?
@@ -555,7 +575,9 @@ impl<'index> Updater<'_> {
           BlockContext {
             network: Network::Bitcoin,
             blockheight: u64::from(self.height),
+            blockhash: block.header.block_hash(),
             blocktime: block.header.time,
+            reorg_epoch,
           },
           &block,
           operations,

@@ -120,6 +120,8 @@ pub struct TransactionTemplate<'a> {
   pub output_values: &'a [u64],
   pub outputs: usize,
   pub witness: Witness,
+  /// Placed on the first input, where the Dogecoin inscription parser reads it.
+  pub script_sig: Script,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,6 +156,7 @@ impl<'a> Default for TransactionTemplate<'a> {
       output_values: &[],
       outputs: 1,
       witness: Witness::default(),
+      script_sig: Script::new(),
     }
   }
 }
