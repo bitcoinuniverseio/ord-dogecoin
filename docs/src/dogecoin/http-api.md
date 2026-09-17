@@ -140,6 +140,49 @@ those two routes keep serving HTML for browsers.
   from the JSON source text. `serde_json` prints a `u64` without rounding.
 - An unknown or malformed id is `404 {"error":"inscription not found"}`.
 
+### `GET /status` and `GET /blockhash`
+
+Under `Accept: application/json`, `GET /status` answers the upstream `ord`
+status document: `chain`, `network`, `height` (the last indexed height, `null`
+before the first block), `address_index`, `inscription_index`, `rune_index`
+(the Dunes index), `sat_index`, `transaction_index`, `drc20_index` and
+`unrecoverably_reorged`. Without the header it stays the plain `OK` text that
+liveness probes read. `GET /blockhash` and `GET /blockhash/{height}` answer the
+block hash as bare text.
+
+### `GET /api/v1/outputs/{outpoint}`
+
+One transaction output in the field layout upstream `ord` answers for
+`GET /output/{outpoint}` under `Accept: application/json`. The same document is
+what `GET /output/{outpoint}` answers when the request carries
+`Accept: application/json`; without that header the route keeps serving HTML.
+
+```json
+{
+  "chain": "dogecoin",
+  "network": "mainnet",
+  "outpoint": "<txid>:0",
+  "address": "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq",
+  "indexed": true,
+  "inscriptions": ["<txid>i0"],
+  "runes": { "UNIVERSE•DUNE": { "amount": 1000, "divisibility": 0, "symbol": null } },
+  "sat_ranges": null,
+  "script_pubkey": "OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG",
+  "spent": false,
+  "transaction": "<txid>",
+  "value": 100000
+}
+```
+
+- `inscriptions` are the ids currently on the output; a spent output has none.
+  `runes` carries the Dunes balance under the upstream key. `sat_ranges` is
+  `null` without `--index-sats`. `spent` comes from the unspent-output table
+  of the index, not from the node.
+- Like the inscription detail, this route answers exact JSON numbers because
+  upstream does and its consumers parse them from the JSON source text.
+- An unknown transaction, a vout beyond the transaction, or a malformed
+  outpoint is `404 {"error":"output not found"}`.
+
 ### `GET /api/v1/drc20/tokens`
 
 | Parameter | Type | Default | Bound |

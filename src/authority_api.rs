@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use crate::Inscription;
 
@@ -148,6 +149,40 @@ pub struct InscriptionDetail {
   pub metaprotocol: Option<String>,
   pub previous: Option<String>,
   pub next: Option<String>,
+}
+
+/// One transaction output in the field layout upstream `ord` answers for
+/// `GET /output/:outpoint` under `Accept: application/json`. `runes` carries
+/// the Dunes balance of the output under the upstream key so a consumer
+/// written against upstream reads this fork unchanged; `sat_ranges` is
+/// `None` without `--index-sats`.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct OutputDetail {
+  pub chain: &'static str,
+  pub network: String,
+  /// `txid:vout`.
+  pub outpoint: String,
+  /// `None` when the script is not an address.
+  pub address: Option<String>,
+  /// Whether the index has processed the transaction of this output.
+  pub indexed: bool,
+  pub inscriptions: Vec<String>,
+  /// Dunes on the output keyed by spaced name.
+  pub runes: BTreeMap<String, OutputDuneBalance>,
+  pub sat_ranges: Option<Vec<(u64, u64)>>,
+  /// The output script as assembly, as upstream renders it.
+  pub script_pubkey: String,
+  pub spent: bool,
+  pub transaction: String,
+  /// Value in koinu.
+  pub value: u64,
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub struct OutputDuneBalance {
+  pub amount: u128,
+  pub divisibility: u8,
+  pub symbol: Option<char>,
 }
 
 /// One DRC-20 deployment with its indexed protocol state.
