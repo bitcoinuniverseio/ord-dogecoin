@@ -16,8 +16,8 @@ use {
       Drc20DecisionCheckpoint, Drc20DecisionCoverage, Drc20OperationDecision,
       Drc20TransactionDecisions, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
-      FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
-      resolved_content_metadata,
+      FundingInventoryItem, InscriptionDetail, InscriptionInventory, InscriptionInventoryItem,
+      InventoryLocation, resolved_content_metadata,
     },
     drc20::{script_key::ScriptKey, OperationDecision, Tick, DRC20_RULESET},
     page_config::PageConfig,
@@ -341,6 +341,10 @@ impl Server {
         .route(
           "/api/v1/inscriptions",
           get(Self::inscription_inventory),
+        )
+        .route(
+          "/api/v1/inscriptions/:inscription_id",
+          get(Self::inscription_detail),
         )
         .route(
           "/api/v1/drc20/transferables",
@@ -2473,12 +2477,134 @@ impl Server {
     }
   }
 
+  /// Whether the request negotiates JSON the way upstream `ord` does, so a
+  /// consumer written against upstream reads this fork unchanged.
+  fn accepts_json(headers: &HeaderMap) -> bool {
+    headers
+      .get(header::ACCEPT)
+      .and_then(|value| value.to_str().ok())
+      .map(|accept| {
+        accept
+          .split(',')
+          .any(|media| media.trim().split(';').next() == Some("application/json"))
+      })
+      .unwrap_or(false)
+  }
+
+  fn inscription_not_found_json() -> Response {
+    (
+      StatusCode::NOT_FOUND,
+      Json(json!({ "error": "inscription not found" })),
+    )
+      .into_response()
+  }
+
+  async fn inscription_detail(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(inscription_id): Path<String>,
+  ) -> ServerResult<Response> {
+    Self::inscription_detail_response(&page_config, &index, &inscription_id)
+  }
+
+  fn inscription_detail_response(
+    page_config: &PageConfig,
+    index: &Index,
+    inscription_id: &str,
+  ) -> ServerResult<Response> {
+    let Ok(inscription_id) = InscriptionId::from_str(inscription_id) else {
+      return Ok(Self::inscription_not_found_json());
+    };
+    match Self::inscription_detail_for(page_config, index, inscription_id)? {
+      Some(detail) => Ok(Json(detail).into_response()),
+      None => Ok(Self::inscription_not_found_json()),
+    }
+  }
+
+  fn inscription_detail_for(
+    page_config: &PageConfig,
+    index: &Index,
+    inscription_id: InscriptionId,
+  ) -> ServerResult<Option<InscriptionDetail>> {
+    let Some(entry) = index.get_inscription_entry(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let Some(inscription) = index.get_inscription_by_id(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let delegate = match inscription.delegate() {
+      Some(delegate) => index.get_inscription_by_id(delegate)?,
+      None => None,
+    };
+    let (content_type, content_length) = resolved_content_metadata(&inscription, delegate.as_ref());
+
+    let Some(satpoint) = index.get_inscription_satpoint_by_id(inscription_id)? else {
+      return Ok(None);
+    };
+
+    let output = index
+      .get_transaction(satpoint.outpoint.txid)?
+      .ok_or_not_found(|| format!("inscription {inscription_id} current transaction"))?
+      .output
+      .into_iter()
+      .nth(satpoint.outpoint.vout.try_into().unwrap())
+      .ok_or_not_found(|| format!("inscription {inscription_id} current transaction output"))?;
+
+    let address = page_config
+      .chain
+      .address_from_script(&output.script_pubkey)
+      .ok()
+      .map(|address| address.to_string());
+
+    let previous = match entry.inscription_number.checked_sub(1) {
+      Some(previous) => index.get_inscription_id_by_inscription_number(previous)?,
+      None => None,
+    };
+
+    let next = index.get_inscription_id_by_inscription_number(entry.inscription_number + 1)?;
+
+    Ok(Some(InscriptionDetail {
+      chain: "dogecoin",
+      network: page_config.chain.to_string(),
+      id: inscription_id.to_string(),
+      number: entry.inscription_number,
+      address,
+      content_type,
+      content_length,
+      height: entry.height,
+      fee: entry.fee,
+      value: output.value,
+      sat: entry.sat.map(Sat::n),
+      satpoint: satpoint.to_string(),
+      output: satpoint.outpoint.to_string(),
+      genesis_transaction: inscription_id.txid.to_string(),
+      timestamp: entry.timestamp,
+      charms: Vec::new(),
+      parents: Vec::new(),
+      child_count: 0,
+      rune: None,
+      metaprotocol: None,
+      previous: previous.map(|id| id.to_string()),
+      next: next.map(|id| id.to_string()),
+    }))
+  }
+
   async fn inscription(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
-    Path(inscription_id): Path<InscriptionId>,
+    Path(inscription_id): Path<String>,
     Query(query): Query<JsonQuery>,
+    headers: HeaderMap,
   ) -> ServerResult<Response> {
+    if Self::accepts_json(&headers) {
+      return Self::inscription_detail_response(&page_config, &index, &inscription_id);
+    }
+
+    let inscription_id = InscriptionId::from_str(&inscription_id)
+      .map_err(|err| ServerError::BadRequest(format!("invalid inscription id: {err}")))?;
+
     let entry = index
       .get_inscription_entry(inscription_id)?
       .ok_or_not_found(|| format!("inscription {inscription_id}"))?;

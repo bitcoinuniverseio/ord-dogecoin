@@ -107,6 +107,49 @@ pub struct Drc20TransferableInventory {
   pub transferables: Vec<Drc20TransferableInventoryItem>,
 }
 
+/// One inscription in the field layout upstream `ord` answers for
+/// `GET /inscription/:id` under `Accept: application/json`, so a consumer
+/// written against upstream reads this fork unchanged. Every integer is an
+/// exact JSON number: `serde_json` prints a `u64` without rounding, and the
+/// explorer overlay reads the JSON source text, so nothing is lost at 2^53.
+/// `charms`, `parents`, `child_count`, `rune` and `metaprotocol` exist for
+/// layout compatibility; this fork does not index them, so they are empty.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct InscriptionDetail {
+  pub chain: &'static str,
+  /// The configured Dogecoin network, the same string `/api/v1/capabilities`
+  /// carries.
+  pub network: String,
+  pub id: String,
+  pub number: u64,
+  /// `None` when the current output is not an address.
+  pub address: Option<String>,
+  pub content_type: Option<String>,
+  pub content_length: Option<usize>,
+  /// Genesis height.
+  pub height: u32,
+  /// Genesis fee in koinu.
+  pub fee: u64,
+  /// Value of the current output in koinu.
+  pub value: u64,
+  /// `None` without `--index-sats`.
+  pub sat: Option<u64>,
+  /// `txid:vout:offset` of the current location.
+  pub satpoint: String,
+  /// `txid:vout` of the current output.
+  pub output: String,
+  pub genesis_transaction: String,
+  /// Unix seconds of the genesis block.
+  pub timestamp: u32,
+  pub charms: Vec<String>,
+  pub parents: Vec<String>,
+  pub child_count: u32,
+  pub rune: Option<String>,
+  pub metaprotocol: Option<String>,
+  pub previous: Option<String>,
+  pub next: Option<String>,
+}
+
 /// One DRC-20 deployment with its indexed protocol state.
 ///
 /// The transferable inventory answers "what can be spent right now". It is
