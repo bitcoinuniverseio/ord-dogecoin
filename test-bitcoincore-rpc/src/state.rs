@@ -144,7 +144,11 @@ impl State {
       total_value += tx.output[*vout].value;
       input.push(TxIn {
         previous_output: OutPoint::new(tx.txid(), *vout as u32),
-        script_sig: Script::new(),
+        script_sig: if i == 0 {
+          template.script_sig.clone()
+        } else {
+          Script::new()
+        },
         sequence: Sequence::MAX,
         witness: if i == 0 {
           template.witness.clone()

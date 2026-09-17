@@ -87,6 +87,16 @@ depend on picking the right savepoint.
 The updater then restarts and indexes forward along the new chain. No operator
 action is required.
 
+Every table is restored together, including `DRC20_OPERATION_DECISIONS`: a
+DRC-20 verdict is written in the same write transaction as the ledger change
+it explains, so a rolled-back block loses its balances and its verdicts at
+once, and the reindex re-derives both. The one value that survives the
+restore is `Statistic::Reorgs`, which is read before the savepoint is
+restored and written back incremented afterwards. It is served as
+`reorgEpoch` on `/api/v1/drc20/operations`, so a verdict re-derived after a
+rollback is distinguishable from the one it replaced. See
+[HTTP API](http-api.md).
+
 Unrecoverable reorgs
 --------------------
 

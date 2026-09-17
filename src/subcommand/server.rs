@@ -13,12 +13,13 @@ use {
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
       Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory,
       Drc20TokenInventoryItem, DuneTokenDetail, DuneTokenInventory, DuneTokenInventoryItem,
-      IndexCapabilities,
+      Drc20DecisionCheckpoint, Drc20DecisionCoverage, Drc20OperationDecision,
+      Drc20TransactionDecisions, IndexCapabilities,
       Drc20TransferableInventory, Drc20TransferableInventoryItem, FundingInventory,
       FundingInventoryItem, InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
       resolved_content_metadata,
     },
-    drc20::{script_key::ScriptKey, Tick},
+    drc20::{script_key::ScriptKey, OperationDecision, Tick, DRC20_RULESET},
     page_config::PageConfig,
     templates::{
       AddressOutputJson, BlockHtml, BlockJson, DuneAddressJson, DuneBalance, DuneBalancesHtml,
@@ -170,6 +171,11 @@ struct InscriptionInventoryQuery {
 struct Drc20InventoryQuery {
   cursor: Option<String>,
   limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct Drc20OperationsQuery {
+  txid: Option<String>,
 }
 
 #[expect(dead_code, reason = "retained for legacy block route decoding")]
@@ -341,6 +347,14 @@ impl Server {
           get(Self::drc20_transferable_inventory),
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
+        .route(
+          "/api/v1/drc20/operations",
+          get(Self::drc20_transaction_decisions),
+        )
+        .route(
+          "/api/v1/drc20/operations/:inscription_id",
+          get(Self::drc20_operation_decision),
+        )
         .route("/api/v1/drc20/tokens", get(Self::drc20_token_inventory))
         .route("/api/v1/drc20/tokens/:tick", get(Self::drc20_token_detail))
         .route(
@@ -2770,6 +2784,7 @@ impl Server {
   /// chain with no tokens from one caused by a database created without
   /// `--index-drc20`. Both used to look like `200 []`.
   async fn index_capabilities(
+    Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<Response> {
     let block_count = index.block_count()?;
@@ -2779,12 +2794,146 @@ impl Server {
     Ok(
       Json(IndexCapabilities {
         chain: "dogecoin",
+        network: page_config.chain.to_string(),
         block_count,
         block_hash: block_hash.to_string(),
         drc20: index.has_drc20_index(),
         dunes: index.has_dune_index(),
         sats: index.has_sat_index(),
         transactions: index.has_transaction_index(),
+        drc20_decisions: index.has_drc20_index(),
+        drc20_decisions_from_height: index.drc20_decisions_from_height()?,
+      })
+      .into_response(),
+    )
+  }
+
+  fn drc20_decision_coverage(index: &Index) -> ServerResult<Drc20DecisionCoverage> {
+    let indexed_height = index
+      .height()?
+      .ok_or_not_found(|| "indexed chain tip")?
+      .n();
+    Ok(Drc20DecisionCoverage {
+      decisions_from_height: index.drc20_decisions_from_height()?,
+      indexed_height,
+    })
+  }
+
+  fn drc20_retained_decision(
+    index: &Index,
+    decision: OperationDecision,
+  ) -> ServerResult<Drc20OperationDecision> {
+    Ok(Drc20OperationDecision {
+      inscription_id: decision.inscription_id.to_string(),
+      txid: decision.txid.to_string(),
+      index: decision.inscription_id.index,
+      operation: Some(decision.operation.as_str()),
+      tick: Some(decision.tick),
+      amount: decision.amount.map(|amount| amount.to_string()),
+      verdict: decision.verdict.as_str(),
+      reason: decision.reason,
+      ruleset: DRC20_RULESET,
+      checkpoint: Some(Drc20DecisionCheckpoint {
+        height: decision.height,
+        block_hash: decision.block_hash.to_string(),
+      }),
+      reorg_epoch: decision.reorg_epoch,
+      coverage: Self::drc20_decision_coverage(index)?,
+    })
+  }
+
+  /// The verdict for one DRC-20 operation, addressed by the inscription that
+  /// carried it.
+  ///
+  /// An inscription's own deploy, mint or inscribe-transfer is the operation
+  /// whose txid is the inscription's txid, which is what this route answers.
+  /// The first transfer of an inscribe-transfer inscription happens in a
+  /// later transaction and is listed by `?txid=` on the collection route.
+  ///
+  /// `404` means the inscription is not indexed at all. `200` with verdict
+  /// `not-evaluated` means it is indexed but no verdict was retained, and
+  /// `reason` says why. Neither is a rejection.
+  async fn drc20_operation_decision(
+    Extension(index): Extension<Arc<Index>>,
+    Path(inscription_id): Path<InscriptionId>,
+  ) -> ServerResult<Response> {
+    let entry = index
+      .get_inscription_entry(inscription_id)?
+      .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+
+    if index.has_drc20_index() {
+      if let Some(decision) =
+        index.get_drc20_operation_decision(inscription_id.txid, inscription_id)?
+      {
+        return Ok(Json(Self::drc20_retained_decision(&index, decision)?).into_response());
+      }
+    }
+
+    let coverage = Self::drc20_decision_coverage(&index)?;
+    let reason = if !index.has_drc20_index() {
+      "drc20-index-disabled"
+    } else if coverage
+      .decisions_from_height
+      .is_none_or(|from| entry.height < from)
+    {
+      "outside-decision-coverage"
+    } else {
+      "not-a-drc20-operation"
+    };
+    let checkpoint = index
+      .block_hash(Some(entry.height))?
+      .map(|block_hash| Drc20DecisionCheckpoint {
+        height: entry.height,
+        block_hash: block_hash.to_string(),
+      });
+
+    Ok(
+      Json(Drc20OperationDecision {
+        inscription_id: inscription_id.to_string(),
+        txid: inscription_id.txid.to_string(),
+        index: inscription_id.index,
+        operation: None,
+        tick: None,
+        amount: None,
+        verdict: "not-evaluated",
+        reason: Some(reason.to_string()),
+        ruleset: DRC20_RULESET,
+        checkpoint,
+        reorg_epoch: index.reorg_epoch()?,
+        coverage,
+      })
+      .into_response(),
+    )
+  }
+
+  /// Every retained DRC-20 decision for the operations one transaction
+  /// carried. A transaction may inscribe one operation and spend several
+  /// inscribe-transfer inscriptions at once; each is a separate record.
+  async fn drc20_transaction_decisions(
+    Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20OperationsQuery>,
+  ) -> ServerResult<Response> {
+    let txid = query
+      .txid
+      .as_deref()
+      .ok_or_else(|| ServerError::BadRequest("txid query parameter is required".to_string()))?
+      .parse::<Txid>()
+      .map_err(|error| ServerError::BadRequest(format!("invalid txid: {error}")))?;
+
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(DRC20_INDEX_ABSENT.to_string()));
+    }
+
+    let mut decisions = Vec::new();
+    for decision in index.get_drc20_operation_decisions_by_txid(txid)? {
+      decisions.push(Self::drc20_retained_decision(&index, decision)?);
+    }
+
+    Ok(
+      Json(Drc20TransactionDecisions {
+        txid: txid.to_string(),
+        decisions,
+        coverage: Self::drc20_decision_coverage(&index)?,
       })
       .into_response(),
     )
