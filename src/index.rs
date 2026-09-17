@@ -405,7 +405,7 @@ impl Index {
       unrecoverably_reorged: AtomicBool::new(false),
       rpc_url,
       nr_parallel_requests,
-      chain: options.chain_argument,
+      chain: options.chain(),
     })
   }
 
