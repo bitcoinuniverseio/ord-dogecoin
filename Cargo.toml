@@ -89,6 +89,10 @@ path = "tests/compatibility.rs"
 name = "authority-api-contract"
 path = "tests/authority_api_contract.rs"
 
+[[test]]
+name = "drc20-decisions"
+path = "tests/drc20_decisions.rs"
+
 [build-dependencies]
 pulldown-cmark = "0.9.2"
 

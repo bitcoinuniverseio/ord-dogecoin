@@ -27,7 +27,8 @@ use {
   url::Url,
 };
 
-use crate::drc20::{Balance, max_script_tick_key, min_script_tick_key, script_tick_key, Tick, TokenInfo, TransferableLog, min_script_tick_id_key, max_script_tick_id_key};
+use crate::drc20::decision::OperationDecisionKey;
+use crate::drc20::{Balance, OperationDecision, max_script_tick_key, min_script_tick_key, script_tick_key, Tick, TokenInfo, TransferableLog, min_script_tick_id_key, max_script_tick_id_key};
 use crate::drc20::script_key::ScriptKey;
 use crate::sat::Sat;
 use crate::sat_point::SatPoint;
@@ -88,6 +89,7 @@ define_table! { DRC20_TOKEN, &str, &[u8] }
 define_table! { DRC20_INSCRIBE_TRANSFER, &InscriptionIdValue, &[u8] }
 define_table! { DRC20_TRANSFERABLELOG, &str, &[u8] }
 define_multimap_table! { DRC20_TOKEN_HOLDER, &str, &str}
+define_table! { DRC20_OPERATION_DECISIONS, &OperationDecisionKey, &[u8] }
 
 pub(crate) struct Index {
   auth: Auth,
@@ -129,6 +131,12 @@ pub(crate) enum Statistic {
   SatRanges,
   Schema,
   IndexTransactions,
+  /// Savepoint rollbacks performed by this database. Survives the rollback
+  /// itself, so it only ever grows.
+  Reorgs,
+  /// First height whose DRC-20 operation decisions are retained. Absent until
+  /// the decision table first became active on this database.
+  Drc20DecisionsFromHeight,
 }
 
 impl Statistic {
@@ -473,6 +481,79 @@ impl Index {
   /// capability has to be observable rather than inferred from an empty list.
   pub(crate) fn has_drc20_index(&self) -> bool {
     self.index_drc20
+  }
+
+  /// First height from which every DRC-20 operation decision is retained, or
+  /// `None` when this database has never recorded one. Blocks below it were
+  /// indexed by a binary without the decision table, so their operations are
+  /// reported as not evaluated rather than inferred from the ledger.
+  pub(crate) fn drc20_decisions_from_height(&self) -> Result<Option<u32>> {
+    let rtx = self.database.begin_read()?;
+    let statistics = rtx.open_table(STATISTIC_TO_COUNT)?;
+    Ok(
+      statistics
+        .get(&Statistic::Drc20DecisionsFromHeight.key())?
+        .map(|value| u32::try_from(value.value()))
+        .transpose()?,
+    )
+  }
+
+  /// Savepoint rollbacks this database has performed.
+  pub(crate) fn reorg_epoch(&self) -> Result<u64> {
+    let rtx = self.database.begin_read()?;
+    let statistics = rtx.open_table(STATISTIC_TO_COUNT)?;
+    Ok(
+      statistics
+        .get(&Statistic::Reorgs.key())?
+        .map(|value| value.value())
+        .unwrap_or(0),
+    )
+  }
+
+  /// The retained decision for the operation `txid` performed on
+  /// `inscription_id`. An inscription's own deploy, mint or inscribe-transfer
+  /// has `txid == inscription_id.txid`; its first transfer has the spending
+  /// txid. `None` when no decision was retained, which includes a database
+  /// that predates the table.
+  pub(crate) fn get_drc20_operation_decision(
+    &self,
+    txid: Txid,
+    inscription_id: InscriptionId,
+  ) -> Result<Option<OperationDecision>> {
+    let rtx = self.database.begin_read()?;
+    let table = match rtx.open_table(DRC20_OPERATION_DECISIONS) {
+      Ok(table) => table,
+      Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+      Err(error) => return Err(error.into()),
+    };
+    Ok(
+      table
+        .get(&OperationDecision::key(txid, inscription_id))?
+        .and_then(|value| OperationDecision::load(value.value())),
+    )
+  }
+
+  /// Every retained decision for operations carried by `txid`, in
+  /// inscription id order.
+  pub(crate) fn get_drc20_operation_decisions_by_txid(
+    &self,
+    txid: Txid,
+  ) -> Result<Vec<OperationDecision>> {
+    let rtx = self.database.begin_read()?;
+    let table = match rtx.open_table(DRC20_OPERATION_DECISIONS) {
+      Ok(table) => table,
+      Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
+      Err(error) => return Err(error.into()),
+    };
+    let (start, end) = OperationDecision::txid_range(txid);
+    let mut decisions = Vec::new();
+    for result in table.range::<&OperationDecisionKey>(&start..=&end)? {
+      let (_, value) = result?;
+      if let Some(decision) = OperationDecision::load(value.value()) {
+        decisions.push(decision);
+      }
+    }
+    Ok(decisions)
   }
 
   pub(crate) fn has_sat_index(&self) -> bool {

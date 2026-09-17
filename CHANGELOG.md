@@ -1,6 +1,33 @@
 Changelog
 =========
 
+Unreleased (Bitcoin Universe fork)
+----------------------------------
+
+### Added
+- Retain a per-operation DRC-20 decision (accepted, or rejected with the
+  protocol reason) in the new `DRC20_OPERATION_DECISIONS` table, written in the
+  same write transaction as the ledger change and rolled back with it on a
+  reorg. Existing databases start recording at the next indexed block; no
+  rebuild.
+- `GET /api/v1/drc20/operations/{inscriptionId}` and
+  `GET /api/v1/drc20/operations?txid=` serve those verdicts with checkpoint,
+  rule set (`drc20-v1`) and reorg epoch, and answer `not-evaluated` with
+  `drc20-index-disabled`, `outside-decision-coverage` or
+  `not-a-drc20-operation` wherever no verdict exists.
+- `GET /api/v1/capabilities` additionally reports `network`,
+  `drc20Decisions` and `drc20DecisionsFromHeight`.
+- `Statistic::Reorgs` counts savepoint rollbacks and survives them.
+- `tests/drc20_decisions.rs`: an end-to-end regtest suite driving the `ord`
+  binary, covering verdicts, multi-operation transactions, coverage without a
+  rebuild, reorg rollback and capabilities. `test-bitcoincore-rpc`
+  transaction templates accept a `script_sig`.
+
+### Changed
+- A redb error while applying a DRC-20 operation now aborts the block instead
+  of being silently discarded, so a database failure is never recorded as a
+  protocol rejection.
+
 [0.5.1](https://github.com/casey/ord/releases/tag/0.5.1) - 2023-02-21
 ---------------------------------------------------------------------
 

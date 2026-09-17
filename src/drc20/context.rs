@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use bitcoin::{Network, Txid};
+use bitcoin::{BlockHash, Network, Txid};
 use redb::{ReadableTable, Table};
 
 use crate::drc20::operation::{Action, deserialize_drc20_operation, InscriptionOp, Operation};
@@ -14,7 +14,10 @@ use crate::sat_point::SatPoint;
 pub struct BlockContext {
   pub network: Network,
   pub blockheight: u64,
+  pub blockhash: BlockHash,
   pub blocktime: u32,
+  /// Savepoint rollbacks the index had performed before this block.
+  pub reorg_epoch: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -58,10 +58,14 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [chain, block_count, block_hash, drc20, dunes, sats, transactions]
+                required: [chain, network, block_count, block_hash, drc20, dunes, sats, transactions, drc20Decisions, drc20DecisionsFromHeight]
                 properties:
                   chain:
                     type: string
+                  network:
+                    type: string
+                    enum: [mainnet, testnet, regtest, signet]
+                    description: The configured Dogecoin network
                   block_count:
                     type: integer
                   block_hash:
@@ -76,6 +80,19 @@ paths:
                   transactions:
                     type: boolean
                     description: Database was created with --index-transactions
+                  drc20Decisions:
+                    type: boolean
+                    description: >-
+                      Per-operation DRC-20 verdicts are retained in the same
+                      write transaction as the ledger change. False when the
+                      database was created without --index-drc20.
+                  drc20DecisionsFromHeight:
+                    type: integer
+                    nullable: true
+                    description: >-
+                      First height whose DRC-20 verdicts are retained. Null
+                      until the decision table has recorded its first block.
+                      Operations below it are reported as not-evaluated.
   /api/v1/inscriptions:
     get:
       summary: Walk indexed inscriptions, newest first
@@ -329,6 +346,71 @@ paths:
             DRC-20 state
         '404':
           description: Unknown ticker
+  /api/v1/drc20/operations/{inscriptionId}:
+    get:
+      summary: Get the retained verdict for one DRC-20 operation
+      description: >-
+        Answers whether the indexer accepted or rejected the DRC-20 operation
+        an inscription carried, and why. The verdict was written in the same
+        write transaction as the ledger change it explains and is rolled back
+        with it on a reorg. An inscription's own deploy, mint or
+        inscribe-transfer is the operation whose txid equals the inscription's
+        txid; its later first transfer is listed by the collection route with
+        ?txid=. A verdict of not-evaluated with a reason is neither an
+        acceptance nor a rejection and must not be inferred into one.
+      operationId: getDrc20OperationDecision
+      parameters:
+        - name: inscriptionId
+          in: path
+          required: true
+          description: Inscription id, txid followed by i and the index
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The retained verdict, or an explicit not-evaluated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Drc20OperationDecision'
+        '404':
+          description: The inscription is not indexed
+  /api/v1/drc20/operations:
+    get:
+      summary: List every retained DRC-20 verdict for one transaction
+      description: >-
+        One transaction can inscribe an operation and spend several
+        inscribe-transfer inscriptions at once; each is a separate record.
+        An empty list means no verdict is retained for that txid; coverage
+        says whether the index could have retained one.
+      operationId: listDrc20TransactionDecisions
+      parameters:
+        - name: txid
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retained verdicts for the transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [txid, decisions, coverage]
+                properties:
+                  txid:
+                    type: string
+                  decisions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Drc20OperationDecision'
+                  coverage:
+                    $ref: '#/components/schemas/Drc20DecisionCoverage'
+        '400':
+          description: >-
+            Missing or malformed txid, or this database was created without
+            --index-drc20
   /api/v1/dunes/tokens:
     get:
       summary: Get the dune catalog with indexed protocol state
@@ -1598,6 +1680,87 @@ paths:
 
 components:
   schemas:
+    Drc20DecisionCoverage:
+      type: object
+      required: [decisionsFromHeight, indexedHeight]
+      properties:
+        decisionsFromHeight:
+          type: integer
+          nullable: true
+          description: First height whose verdicts are retained; null if none yet
+        indexedHeight:
+          type: integer
+          description: Height of the last indexed block
+    Drc20OperationDecision:
+      type: object
+      required:
+        - inscriptionId
+        - txid
+        - index
+        - operation
+        - tick
+        - amount
+        - verdict
+        - reason
+        - ruleset
+        - checkpoint
+        - reorgEpoch
+        - coverage
+      properties:
+        inscriptionId:
+          type: string
+        txid:
+          type: string
+          description: Transaction that carried the operation
+        index:
+          type: integer
+          description: Inscription index within the inscription's transaction
+        operation:
+          type: string
+          nullable: true
+          enum: [deploy, mint, inscribe-transfer, transfer]
+        tick:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+          description: >-
+            Ledger-effective atomic amount as an exact decimal string. Present
+            only on accepted mint, inscribe-transfer and transfer operations.
+        verdict:
+          type: string
+          enum: [accepted, rejected, not-evaluated]
+        reason:
+          type: string
+          nullable: true
+          description: >-
+            The protocol error when rejected. When not-evaluated, one of
+            drc20-index-disabled, outside-decision-coverage or
+            not-a-drc20-operation.
+        ruleset:
+          type: string
+          description: Rule set the verdict was produced under, currently drc20-v1
+        checkpoint:
+          type: object
+          nullable: true
+          required: [height, blockHash]
+          properties:
+            height:
+              type: integer
+            blockHash:
+              type: string
+          description: >-
+            The block the verdict was decided in, or the inscription's block
+            when not evaluated.
+        reorgEpoch:
+          type: integer
+          description: >-
+            Savepoint rollbacks the index had performed when the verdict was
+            recorded. A record re-derived after a rollback carries a higher
+            value than the one it replaced.
+        coverage:
+          $ref: '#/components/schemas/Drc20DecisionCoverage'
     InscriptionAddressJson:
       type: object
       required: [inscriptions, total_inscriptions]

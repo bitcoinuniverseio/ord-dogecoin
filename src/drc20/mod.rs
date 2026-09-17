@@ -7,6 +7,7 @@ pub(super) mod token_info;
 pub(super) mod transfer;
 pub(crate) mod script_key;
 mod context;
+pub(crate) mod decision;
 mod read_write;
 mod deploy;
 mod mint;
@@ -18,6 +19,7 @@ pub use self::{
     balance::Balance, errors::DRC20Error, events::*, tick::*, token_info::TokenInfo,
     transfer::TransferInfo,
     context::BlockContext, context::Message,
+    decision::{OperationDecision, Verdict, DRC20_RULESET},
     num::Num, deploy::Deploy, mint::Mint, transfer::Transfer,
     transferable_log::TransferableLog,
 };

@@ -1,12 +1,12 @@
 use ord::authority_api::{
-  checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20HolderInventory,
-  Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem,
-  Drc20TransferableInventory, Drc20TransferableInventoryItem, DuneTokenDetail,
-  DuneTokenInventory, DuneTokenInventoryItem, FundingInventory,
-  FundingInventoryItem, IndexCapabilities, InscriptionInventory, InscriptionInventoryItem,
-  InventoryLocation,
+  checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20DecisionCheckpoint,
+  Drc20DecisionCoverage, Drc20HolderInventory, Drc20HolderInventoryItem, Drc20OperationDecision,
+  Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem, Drc20TransactionDecisions,
+  Drc20TransferableInventory, Drc20TransferableInventoryItem, DuneTokenDetail, DuneTokenInventory,
+  DuneTokenInventoryItem, FundingInventory, FundingInventoryItem, IndexCapabilities,
+  InscriptionInventory, InscriptionInventoryItem, InventoryLocation,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[test]
 fn bounds_inventory_pages() {
@@ -240,19 +240,76 @@ fn serializes_drc20_holder_balances_as_exact_atomic_strings() {
 fn reports_index_capabilities_so_an_empty_result_is_never_ambiguous() {
   let capabilities = IndexCapabilities {
     chain: "dogecoin",
+    network: "mainnet".to_string(),
     block_count: 6_400_001,
     block_hash: "ab".repeat(32),
     drc20: false,
     dunes: false,
     sats: false,
     transactions: true,
+    drc20_decisions: false,
+    drc20_decisions_from_height: None,
   };
 
   let encoded = serde_json::to_value(capabilities).unwrap();
   assert_eq!(encoded["chain"], json!("dogecoin"));
+  assert_eq!(encoded["network"], json!("mainnet"));
   assert_eq!(encoded["drc20"], false);
   assert_eq!(encoded["transactions"], true);
   assert_eq!(encoded["block_count"], json!(6_400_001));
+  assert_eq!(encoded["drc20Decisions"], false);
+  assert_eq!(encoded["drc20DecisionsFromHeight"], Value::Null);
+}
+
+/// PO-D05 regression. A verdict is only ever `accepted` or `rejected` when
+/// the indexer evaluated that exact operation; everything else is
+/// `not-evaluated` with a reason, and the amount stays an exact string.
+#[test]
+fn serializes_drc20_operation_decisions_with_checkpoint_and_coverage() {
+  let decision = Drc20OperationDecision {
+    inscription_id: format!("{}i0", "cd".repeat(32)),
+    txid: "cd".repeat(32),
+    index: 0,
+    operation: Some("mint"),
+    tick: Some("abcd".to_string()),
+    amount: Some(u128::MAX.to_string()),
+    verdict: "accepted",
+    reason: None,
+    ruleset: "drc20-v1",
+    checkpoint: Some(Drc20DecisionCheckpoint {
+      height: 5_000_000,
+      block_hash: "ab".repeat(32),
+    }),
+    reorg_epoch: 3,
+    coverage: Drc20DecisionCoverage {
+      decisions_from_height: Some(4_999_000),
+      indexed_height: 5_000_010,
+    },
+  };
+
+  let encoded = serde_json::to_value(decision).unwrap();
+  assert_eq!(encoded["inscriptionId"], json!(format!("{}i0", "cd".repeat(32))));
+  assert_eq!(encoded["amount"], json!(u128::MAX.to_string()));
+  assert_eq!(encoded["verdict"], json!("accepted"));
+  assert_eq!(encoded["reason"], Value::Null);
+  assert_eq!(encoded["ruleset"], json!("drc20-v1"));
+  assert_eq!(encoded["checkpoint"]["height"], json!(5_000_000));
+  assert_eq!(encoded["checkpoint"]["blockHash"], json!("ab".repeat(32)));
+  assert_eq!(encoded["reorgEpoch"], json!(3));
+  assert_eq!(encoded["coverage"]["decisionsFromHeight"], json!(4_999_000));
+  assert_eq!(encoded["coverage"]["indexedHeight"], json!(5_000_010));
+
+  let unevaluated = Drc20TransactionDecisions {
+    txid: "cd".repeat(32),
+    decisions: Vec::new(),
+    coverage: Drc20DecisionCoverage {
+      decisions_from_height: None,
+      indexed_height: 12,
+    },
+  };
+  let encoded = serde_json::to_value(unevaluated).unwrap();
+  assert_eq!(encoded["decisions"], json!([]));
+  assert_eq!(encoded["coverage"]["decisionsFromHeight"], Value::Null);
 }
 
 #[test]

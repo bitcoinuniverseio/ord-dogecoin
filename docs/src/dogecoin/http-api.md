@@ -49,12 +49,21 @@ Reports what this database can answer. No parameters.
   "drc20": true,
   "dunes": true,
   "sats": false,
-  "transactions": true
+  "transactions": true,
+  "network": "mainnet",
+  "drc20Decisions": true,
+  "drc20DecisionsFromHeight": 5700000
 }
 ```
 
 The four booleans are the flags stored **in the database file at creation
-time**, not the flags on the command line. This is the endpoint to call before
+time**, not the flags on the command line. `network` is the configured
+chain (`mainnet`, `testnet`, `regtest` or `signet`), so a consumer can
+verify which network it is reading instead of inferring one from a port.
+`drc20Decisions` says whether per-operation DRC-20 verdicts are retained
+(true whenever `drc20` is), and `drc20DecisionsFromHeight` is the first
+height they are retained from, or `null` until the first block has been
+recorded (the operations route below explains coverage). This is the endpoint to call before
 trusting any other one, and the endpoint to poll for liveness: `block_count` is
 the number of indexed blocks, so the indexed tip height is `block_count - 1`.
 
@@ -114,6 +123,73 @@ One deployment, same item contract as the catalog.
 
 Holder balances for one ticker in atomic units, split into `overall_atomic`,
 `transferable_atomic` and `available_atomic`.
+
+### `GET /api/v1/drc20/operations/{inscriptionId}`
+
+Was this exact DRC-20 operation accepted or rejected by the ledger, and why.
+
+```json
+{
+  "inscriptionId": "<txid>i0",
+  "txid": "<txid>",
+  "index": 0,
+  "operation": "mint",
+  "tick": "abcd",
+  "amount": "10",
+  "verdict": "accepted",
+  "reason": null,
+  "ruleset": "drc20-v1",
+  "checkpoint": { "height": 5700123, "blockHash": "..." },
+  "reorgEpoch": 0,
+  "coverage": { "decisionsFromHeight": 5700000, "indexedHeight": 5700400 }
+}
+```
+
+The verdict is written in the **same write transaction** as the ledger
+change it explains, by the same code path that applied or refused the
+operation, so balances and verdicts can never disagree. A reorg that
+restores a savepoint rolls both back together; re-indexing re-derives both.
+
+| `verdict` | Meaning |
+| --- | --- |
+| `accepted` | The ledger applied this operation. `amount` is the ledger-effective atomic amount for mint (after the supply cut-off), inscribe-transfer and transfer; `null` for deploy. |
+| `rejected` | The ledger refused it. `reason` is the protocol error, for example `amount exceed limit: 11`, `tick: zzzz not found`, `insufficient balance: 10 100`, `tick: abcd has been existed`. Nothing changed. |
+| `not-evaluated` | No verdict is retained. `reason` is `drc20-index-disabled` (database created without `--index-drc20`), `outside-decision-coverage` (the block predates `decisionsFromHeight`) or `not-a-drc20-operation` (the block was evaluated and the inscription carries no DRC-20 operation). `operation`, `tick` and `amount` are `null`; `checkpoint` is the inscription's block. |
+
+`not-evaluated` is neither acceptance nor rejection. A consumer must not read
+the ledger backwards to invent a verdict for it, and must not treat an
+inscription's `metaprotocol` marker as acceptance.
+
+`404` means the inscription is not indexed at all.
+
+An inscription carries at most two operations: its own deploy, mint or
+inscribe-transfer (whose `txid` is the inscription's txid, which is what this
+route answers) and, for an inscribe-transfer, its first transfer in a later
+transaction. The transfer's verdict is listed by the collection route.
+
+`reorgEpoch` counts the savepoint rollbacks the index had performed when the
+verdict was recorded. A verdict re-derived after a rollback carries a higher
+value than the one it replaced; a verdict below the fork point that survived
+inside the restored savepoint keeps its value, because it was not
+re-evaluated.
+
+### `GET /api/v1/drc20/operations?txid={txid}`
+
+Every retained verdict for the operations one transaction carried, as
+`{ "txid", "decisions": [...], "coverage": {...} }`. A transaction can
+inscribe one operation and spend several inscribe-transfer inscriptions at
+once; each is a separate record. An empty `decisions` list is not a
+rejection: `coverage` says whether the index could have retained one.
+Returns `400` without a valid `txid`, or on a database created without
+`--index-drc20`.
+
+#### Coverage without a rebuild
+
+An existing database gains the decision table on its first indexed block
+after the upgrade, and records that height as `decisionsFromHeight`. Nothing
+before it is backfilled, because the historical ledger state needed to
+re-decide those operations no longer exists; those operations are reported as
+`outside-decision-coverage` rather than inferred from today's balances.
 
 ### `GET /api/v1/drc20/transferables`
 

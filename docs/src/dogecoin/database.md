@@ -130,6 +130,7 @@ dunes.
 | `DRC20_TRANSFERABLELOG` | Outstanding transferable inscriptions. |
 | `DRC20_INSCRIBE_TRANSFER` | Inscribe-transfer operations awaiting their transfer. |
 | `DRC20_TOKEN_HOLDER` | Ticker to holders (multimap), which is what `holder_count` counts. |
+| `DRC20_OPERATION_DECISIONS` | One record per evaluated operation, keyed by operation txid followed by inscription id, holding the versioned verdict served by `/api/v1/drc20/operations`. Written in the block's own write transaction. Created lazily on the first block an upgraded binary indexes, so no rebuild is needed. |
 
 DRC-20 tickers are exactly four bytes (`TICK_BYTE_COUNT = 4`) and are matched
 case-insensitively through a lowercase form. The protocol literal is `drc-20`,
@@ -149,6 +150,8 @@ Statistics
 | `OutputsTraversed` | Outputs processed since creation. |
 | `SatRanges` | Ordinal ranges stored. |
 | `Dunes`, `ReservedDunes` | Dune counters. |
+| `Reorgs` | Savepoint rollbacks performed. Read before the restore and written back after it, so it survives the rollback and only grows. Served as `reorgEpoch`. |
+| `Drc20DecisionsFromHeight` | First height whose DRC-20 verdicts are retained. Absent until the decision table records its first block. Served as `drc20DecisionsFromHeight`. |
 
 Consistency and durability
 --------------------------
