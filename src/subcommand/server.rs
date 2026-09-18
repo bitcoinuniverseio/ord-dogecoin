@@ -3043,6 +3043,22 @@ impl Server {
   /// A consumer must be able to distinguish an empty DRC-20 result caused by a
   /// chain with no tokens from one caused by a database created without
   /// `--index-drc20`. Both used to look like `200 []`.
+/*
+ * IMPLEMENTATION-HANDOFF [WP02] BEGIN
+ * Recover full Ord catch-up and qualify its actual coverage
+ * Coverage: DOGINALS, DRC20, DUNES; defects: D02; functional status: FAIL.
+ * Observed: Public health and direct authority agree checkpoint 4843999 and lag 1535040. drc20/dunes/transactions flags are true. DRC20 decision history starts only at 4836000. Failed relocation is observed, but present destination state and exact current failure cause are unresolved.
+ * Sources: S-ORD,S-TRAC,S-DOGINALS (research-register.json in the server handoff).
+ * Prerequisites: none.
+ * 1. Compare both existing Ord authorities and the OVH destination with Core at identical heights and hashes. Read deploy/DOGECOIN-INDEX-TOPOLOGY.md but treat it as a hypothesis until reconciled with live units; the relocation unit is failed and the journal/log show an interrupted rsync.
+ * 2. Preserve active ingestion. Complete WP07 before reusing relocation. Identify whether a newer destination is already progressing; continue legitimate work rather than restart, duplicate indexing or overwrite it. Use an application-consistent snapshot/checkpoint and verify its hash before any destination activation.
+ * 3. Record index creation flags, schema, pinned binary, subsidy/start-sat input hashes, first indexed height and DRC20 decision boundary. Do not infer complete historical decisions from a drc20Decisions flag or from block_count. Backfill from protocol activation into an isolated compatible index if full historical decisions are required.
+ * 4. After tip/hash equivalence and acceptance, perform coordinated proxy cutover retaining the old endpoint for rollback; update existing health timer targets and the backend's ord authority. Keep stale state truthful until qualified; do not change zero-lag predicates merely to turn badges green.
+ * Verification: Ord: cargo test --locked; focused existing targets must be read from Cargo.toml before selection. Testnet /api/v1/capabilities at forwarded port 48491 responds network=testnet, block_count=232537; DRC20 decisions boundary is null. This is reachability evidence only. Run real testnet inscription/DRC20/Dunes cases listed in research.md, then indexer/API/UI readback.
+ * Acceptance: Correct semantic results, restart/replay and reorganization recovery; fresh matching checkpoints; explicit historical/pending coverage, no substitution of unknown for empty.
+ * Rollback: No in-place schema downgrade. Preserve compatible snapshot and old route. Never terminate an indexer doing valid indexing or reorg recovery.
+ * IMPLEMENTATION-HANDOFF [WP02] END
+ */
   async fn index_capabilities(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,

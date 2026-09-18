@@ -15,6 +15,20 @@ log(){ printf '%s %s\n' "$(date -Is)" "$*"; }
 # 65k-hour drives sits at "10% remaining" for hours (host IO suspends it); accept
 # the gate once sdb has reported 10% remaining for more than an hour with zero
 # reallocated/pending/uncorrectable sectors and an overall PASSED health.
+# IMPLEMENTATION-HANDOFF [WP07] BEGIN
+# Repair relocation health gate before resuming migration
+# Coverage: OPS-RELOCATION, OPS-RECOVERY; defects: D06; functional status: FAIL.
+# Observed: smart_done returns success when 'Self-test routine in progress' is absent without checking completed test result. Its grep for IDs 5/197/198 succeeds when any matching zero row exists, not all three. Therefore failed/missing tests or nonzero attributes can satisfy the gate. Current interruption cause remains unresolved.
+# Sources: S-ORD (research-register.json in the server handoff).
+# Prerequisites: none.
+# 1. Replace text-pattern early return with structured smartctl JSON parsing in the owning relocation script. Require a successful completed extended self-test and explicit overall health plus all selected device-applicable error counters; reject missing/unparseable data. Do not treat one zero row as proof all counters are zero.
+# 2. Tie result to the destination disk serial and test start/completion time; a previous short test is insufficient. Remove the elapsed-at-10-percent success shortcut unless a separately reviewed storage policy supplies equivalent verified protection.
+# 3. Add shell/script tests with saved sanitized smartctl fixtures: failed completed test, absent extended test, one nonzero selected counter, missing field, in-progress, clean completed test. Validate script syntax and cleanup/traps without production copy or service changes.
+# 4. Review interruption/resume state, destination lock/checkpoint and copy consistency. Coordinate with the existing operator workflow; retain the current serving index and do not interrupt active reorg/indexing. Never resume by assuming partial copied redb is sound.
+# Verification: Proposed new deploy/linux/tests/relocate-smart-gate fixtures and test harness; bash -n deploy/linux/universe-ord-dogecoin-full-relocate. Commands not executed; production state untouched.
+# Acceptance: Only verified healthy destination and consistent snapshot pass; all unsafe/missing cases fail closed; interruption preserves source service and resumable evidence.
+# Rollback: Keep previous source index untouched. If destination validation fails, leave it unserved and retain original routing. Do not weaken health gates to accelerate launch.
+# IMPLEMENTATION-HANDOFF [WP07] END
 smart_done(){
   local st; st=$($RSH $D 'sudo -n smartctl -a /dev/sdb')
   grep -q "Self-test routine in progress" <<<"$st" || return 0
