@@ -3049,7 +3049,7 @@ impl Server {
  * Coverage: DOGINALS, DRC20, DUNES; defects: D02; functional status: FAIL.
  * Observed: Public health and direct authority agree checkpoint 4843999 and lag 1535040. drc20/dunes/transactions flags are true. DRC20 decision history starts only at 4836000. Failed relocation is observed, but present destination state and exact current failure cause are unresolved.
  * Sources: S-ORD,S-TRAC,S-DOGINALS (research-register.json in the server handoff).
- * Prerequisites: none.
+ * Prerequisites: WP07.
  * 1. Compare both existing Ord authorities and the OVH destination with Core at identical heights and hashes. Read deploy/DOGECOIN-INDEX-TOPOLOGY.md but treat it as a hypothesis until reconciled with live units; the relocation unit is failed and the journal/log show an interrupted rsync.
  * 2. Preserve active ingestion. Complete WP07 before reusing relocation. Identify whether a newer destination is already progressing; continue legitimate work rather than restart, duplicate indexing or overwrite it. Use an application-consistent snapshot/checkpoint and verify its hash before any destination activation.
  * 3. Record index creation flags, schema, pinned binary, subsidy/start-sat input hashes, first indexed height and DRC20 decision boundary. Do not infer complete historical decisions from a drc20Decisions flag or from block_count. Backfill from protocol activation into an isolated compatible index if full historical decisions are required.
