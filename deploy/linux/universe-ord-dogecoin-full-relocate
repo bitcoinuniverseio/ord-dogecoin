@@ -11,21 +11,42 @@ D=ubuntu@51.222.43.129
 SRC=/data/indexers-c/ord-dogecoin-full/index-all.redb
 DST=/data/indexers/data/indexers-c/ord-dogecoin-full/index-all.redb
 log(){ printf '%s %s\n' "$(date -Is)" "$*"; }
-# Gate on the data disk (sdb3 = /data/indexers). The extended self-test on these
-# 65k-hour drives sits at "10% remaining" for hours (host IO suspends it); accept
-# the gate once sdb has reported 10% remaining for more than an hour with zero
-# reallocated/pending/uncorrectable sectors and an overall PASSED health.
+# Gate on the data disk (sdb3 = /data/indexers). The destination must show a
+# completed extended self-test that finished without error, an overall health
+# of PASSED, and zero reallocated, pending and uncorrectable sectors, all read
+# from smartctl JSON and all tied to the expected disk serial. A disk that was
+# never tested, is still testing, or reports one unreadable field does not
+# pass. There is no elapsed-time shortcut: the previous gate accepted a disk
+# sitting at "10% remaining", which is why an unverified destination could be
+# copied onto.
+# shellcheck source=lib/relocate-smart-gate.sh
+. "$(dirname "$0")/lib/relocate-smart-gate.sh"
+# Serial of the destination data disk. Unset is a hard stop, not a default.
+DEST_DISK_SERIAL=${DEST_DISK_SERIAL:?set DEST_DISK_SERIAL to the destination /dev/sdb serial}
+DEST_DISK=${DEST_DISK:-/dev/sdb}
 smart_done(){
-  local st; st=$($RSH $D 'sudo -n smartctl -a /dev/sdb')
-  grep -q "Self-test routine in progress" <<<"$st" || return 0
-  grep -q "10% of test remaining" <<<"$st" || return 1
-  grep -qE "^ *(5|197|198) .* 0$" <<<"$st" || return 1
-  grep -q "PASSED" <<<"$st" || return 1
-  local stamp=/var/lib/universe-ord-dogecoin-full-relocate.sdb-10pct-since
-  [ -f "$stamp" ] || date +%s > "$stamp"
-  [ $(( $(date +%s) - $(cat "$stamp") )) -gt 3600 ] || return 1
-  log "accepting the SMART gate: sdb at 10% remaining for over an hour, no reallocated/pending/uncorrectable sectors, health PASSED"
+  local json verdict
+  if ! json=$($RSH $D "sudo -n smartctl -j -a $DEST_DISK" 2>/dev/null); then
+    log "SMART gate: could not read $DEST_DISK on the destination"
+    return 1
+  fi
+  if verdict=$(smart_gate_evaluate "$DEST_DISK_SERIAL" <<<"$json"); then
+    log "SMART gate accepted: $verdict"
+    return 0
+  fi
+  log "SMART gate rejected: $verdict"
+  # Waiting only makes sense while a test is pending or running. A disk that
+  # reported a failure, a bad counter or the wrong identity will not become
+  # healthy by waiting, so the migration stops instead of spinning.
+  case $verdict in
+    *extended-self-test-absent*|*extended-self-test-in-progress*|*could-not-read*)
+      return 1 ;;
+    *)
+      log "ABORT: destination disk is not acceptable and will not become so by waiting"
+      exit 1 ;;
+  esac
 }
+
 log "start"
 while ! smart_done; do log "waiting: destination SMART long tests still running"; sleep 600; done
 log "SMART tests finished; results:"

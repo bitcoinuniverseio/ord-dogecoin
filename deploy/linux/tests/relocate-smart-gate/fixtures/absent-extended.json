@@ -1,0 +1,83 @@
+{
+  "serial_number": "WD-SANITIZED-0001",
+  "device": {
+    "name": "/dev/sdb",
+    "type": "sat",
+    "protocol": "ATA"
+  },
+  "power_on_time": {
+    "hours": 65010
+  },
+  "smart_status": {
+    "passed": true
+  },
+  "ata_smart_self_test_log": {
+    "standard": {
+      "revision": 1,
+      "table": [
+        {
+          "type": {
+            "value": 1,
+            "string": "Short offline"
+          },
+          "status": {
+            "value": 0,
+            "string": "Completed without error",
+            "passed": true
+          },
+          "lifetime_hours": 64000
+        }
+      ],
+      "count": 2
+    }
+  },
+  "ata_smart_attributes": {
+    "revision": 16,
+    "table": [
+      {
+        "id": 5,
+        "name": "Reallocated_Sector_Ct",
+        "value": 100,
+        "worst": 100,
+        "thresh": 10,
+        "raw": {
+          "value": 0,
+          "string": "0"
+        }
+      },
+      {
+        "id": 197,
+        "name": "Current_Pending_Sector",
+        "value": 100,
+        "worst": 100,
+        "thresh": 0,
+        "raw": {
+          "value": 0,
+          "string": "0"
+        }
+      },
+      {
+        "id": 198,
+        "name": "Offline_Uncorrectable",
+        "value": 100,
+        "worst": 100,
+        "thresh": 0,
+        "raw": {
+          "value": 0,
+          "string": "0"
+        }
+      },
+      {
+        "id": 9,
+        "name": "Power_On_Hours",
+        "value": 11,
+        "worst": 11,
+        "thresh": 0,
+        "raw": {
+          "value": 65010,
+          "string": "65010"
+        }
+      }
+    ]
+  }
+}
