@@ -623,6 +623,22 @@ impl Index {
     Ok(info)
   }
 
+/*
+ * IMPLEMENTATION-HANDOFF [WP06] BEGIN
+ * Resolve consensus documentation and semantic test gaps
+ * Coverage: SPEC-DOGINALS, SPEC-DRC20, SPEC-DUNES, SPEC-TAP; defects: R01; functional status: BLOCKED.
+ * Observed: Pinned indexer docs conflict on inscription envelope and number of test targets; Dunes semantic E2E is documented as absent. Independent normative DRC20/Dunes prose and TAP Dogecoin-specific activation/network rules have not been fully established.
+ * Sources: S-DOGINALS,S-TRAC,S-ORD,S-TAP (research-register.json in the server handoff).
+ * Prerequisites: none.
+ * 1. Use pinned parser/indexer source and test vectors as implementation-behavior evidence; distinguish it from normative rules. Reconcile docs/differences.md push-only versus OP_FALSE/OP_IF statement against the actual Doginals parser. Correct README/test target inventory after inspecting Cargo targets.
+ * 2. Add non-executable acceptance design now; implementation must add parser/ledger tests for push/countdown malformed and multipart envelopes, ownership, DRC20 four UTF-8-byte tickers, exact decimals/supply, deploy/mint/transfer and Dunes etch/mint/edict/cenotaph/burn behavior.
+ * 3. Record activation-boundary fixtures, inputs and expected state from pinned authority/reference. Do not apply current Bitcoin BRC20/Runes semantics to Dogecoin. For historical DRC20 decisions, respect the actual coverage start and test pre-boundary unknown behavior.
+ * 4. Use Dogecoin testnet because Dogecoin Core 1.14.9 has no Signet network. Keep isolated regtest for deterministic faults only. Qualify deployed testnet authorities and public testnet round trips before claiming functional PASS.
+ * Verification: cargo test --locked in ord-dogecoin with pinned Rust toolchain/dependencies; inspect docs/testing.md and Cargo.toml first. Dunes E2E and testnet TAP semantic fixtures remain to implement. No semantic test was executed in this preparation.
+ * Acceptance: Trace every required explorer operation to identified source semantics, executable tests and evidence. Unresolved normative ambiguity is BLOCKED, never invented behavior.
+ * Rollback: Tests/docs additions do not migrate state; any implementation change that changes historical interpretation requires versioned schema, replay plan and independently compared ledger before cutover.
+ * IMPLEMENTATION-HANDOFF [WP06] END
+ */
   pub(crate) fn update(&self) -> Result {
     let mut updater = Updater::new(self)?;
 
