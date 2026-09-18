@@ -623,6 +623,11 @@ impl Index {
     Ok(info)
   }
 
+/*
+ * Outstanding: WP06 of the Dogecoin mainnet readiness plan. The governing
+ * DRC-20 and Dunes semantics are not yet reconciled against executable
+ * reference tests; the plan lives in the handoff bundle, not here.
+ */
   pub(crate) fn update(&self) -> Result {
     let mut updater = Updater::new(self)?;
 

@@ -3043,6 +3043,11 @@ impl Server {
   /// A consumer must be able to distinguish an empty DRC-20 result caused by a
   /// chain with no tokens from one caused by a database created without
   /// `--index-drc20`. Both used to look like `200 []`.
+/*
+ * Outstanding: WP02 of the Dogecoin mainnet readiness plan. This authority
+ * is still behind the chain tip, so its coverage is reported stale rather
+ * than complete. The plan lives in the handoff bundle, not here.
+ */
   async fn index_capabilities(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
