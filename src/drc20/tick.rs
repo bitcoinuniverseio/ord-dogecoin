@@ -11,23 +11,25 @@ use super::*;
 /*
  * IMPLEMENTATION-HANDOFF [DG-WP-11] DG-A-026
  * Coverage: DG-DRC-INPUT-VALIDATION. Defects: DG-F10, DG-F11.
- * Preparation only; executable behavior is unchanged.
- * Observed: This pinned parser requires exactly4 UTF8 bytes; Core legacy listing input currently accepts a
- * different1-to32 ASCII rule.
+ * Preparation 20260919-0438 only. Executable behavior is unchanged.
+ * Current baseline: f7d1e17ded3ae136cfd17bf53e62d298035bcc90.
+ * Observed: This pinned parser requires exactly4 UTF8 bytes; Core legacy listing input currently accepts
+ * a different1-to32 ASCII rule.
  * Sources: SRC-DRC-PARSER tick.rs and params.rs; SRC-TAP-SPEC distinguishes token standards.
- * Prerequisites: DG-WP-04, DG-WP-05; execute this local change with the named work package.
+ * Dependencies: DG-WP-04, DG-WP-05.
  * 1. Preserve this ledger rule unless authoritative compatibility evidence justifies a versioned change;
  * repair clients instead of relaxing the parser to match an incorrect UI.
- * 2. Export or document conformance vectors for ASCII/multibyte4-byte tickers, case normalization and invalid
- * byte lengths; share vectors with Core and backend-apis validation.
- * 3. Keep maximum decimals and atomic amount semantics aligned with params.rs and operation decisions; record
- * any unresolved reference disagreement explicitly.
- * Verification: From ord-dogecoin: cargo test drc20; cross-run the same independently sourced vectors in
+ * 2. Export or document conformance vectors for ASCII/multibyte4-byte tickers, case normalization and
+ * invalid byte lengths; share vectors with Core and backend-apis validation.
+ * 3. Keep maximum decimals and atomic amount semantics aligned with params.rs and operation decisions;
+ * record any unresolved reference disagreement explicitly.
+ * Verify: From ord-dogecoin: cargo test drc20; cross-run the same independently sourced vectors in
  * frontend/backend validation tests.
- * Acceptance: Exact input/output amounts match API/wallet/ledger and no error path masquerades as a genuinely
- * empty market.
- * Rollback: Retain wire atomic-string compatibility and restore last accepted UI artifact if regressions
- * occur. No data rewrite from reformatted display quantities.
+ * Acceptance: Exact input/output amounts match API/wallet/ledger and no error path masquerades as a
+ * genuinely empty market. Every protocol remains discoverable and usable without unrelated visual
+ * redesign.
+ * Migration/rollback: Retain wire atomic-string compatibility and restore last accepted UI artifact if
+ * regressions occur. No data rewrite from reformatted display quantities.
  */
 pub const TICK_BYTE_COUNT: usize = 4;
 
