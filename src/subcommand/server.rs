@@ -3217,6 +3217,29 @@ impl Server {
   /// built from transferables silently drops it. This serves the catalog and
   /// its protocol state from the indexed DRC-20 tables, stamped with the same
   /// checkpoint evidence as every other authority projection.
+/*
+ * IMPLEMENTATION-HANDOFF [DG-WP-07] DG-A-025
+ * Coverage: DG-DRC-INDEX-CONSISTENCY. Defects: DG-F08, DG-F14.
+ * Preparation only; executable behavior is unchanged.
+ * Observed: Token catalog, holder counts and block evidence are read separately; offset-only cursors are not
+ * bound to a checkpoint, and holder-count errors can be mapped to zero.
+ * Sources: SRC-ORD-OWN token/holder handlers; SRC-DRC-PARSER.
+ * Prerequisites: DG-WP-02, DG-WP-03; execute this local change with the named work package.
+ * 1. Read the indexed block evidence, catalog and per-token state under one consistent database read
+ * transaction. Return an explicit unavailable/error response on holder-query failure rather than
+ * unwrap_or(0).
+ * 2. Version the pagination contract to bind checkpoint hash, network and query/order to cursor; reject stale
+ * views or serve an immutable retained view. Apply the same rule to drc20_holder_inventory and
+ * inscription_inventory.
+ * 3. Preserve ledger parser semantics and exact atomic strings; extend the owning Index read API rather than
+ * exposing database internals or scanning private data from the browser.
+ * Verification: From ord-dogecoin: cargo test drc20; add server/index tests for concurrent new deployment
+ * between pages, failed holder read, precise balances and reorg cursor rejection.
+ * Acceptance: Normal chain growth produces bounded fresh complete views; reorgs suspend unsafe writes and
+ * reconstruct exact balances/events without duplicate effects.
+ * Rollback: Version schema and cursor; backup ledger before migration and rebuild projections from immutable
+ * source blocks. Do not overwrite a syncing production database.
+ */
   async fn drc20_token_inventory(
     Extension(index): Extension<Arc<Index>>,
     Query(query): Query<Drc20InventoryQuery>,
