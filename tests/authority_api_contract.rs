@@ -1,6 +1,7 @@
 use ord::authority_api::{
   checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20DecisionCheckpoint,
-  Drc20DecisionCoverage, Drc20HolderInventory, Drc20HolderInventoryItem, Drc20OperationDecision,
+  Drc20AddressBalanceItem, Drc20AddressInventory, Drc20DecisionCoverage, Drc20HolderInventory,
+  Drc20HolderInventoryItem, Drc20OperationDecision,
   Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem, Drc20TransactionDecisions,
   Drc20TransferableInventory, Drc20TransferableInventoryItem, DuneTokenDetail, DuneTokenInventory,
   DuneTokenInventoryItem, FundingInventory, FundingInventoryItem, IndexCapabilities,
@@ -228,6 +229,50 @@ fn serializes_drc20_holder_balances_as_exact_atomic_strings() {
   );
   assert_eq!(
     encoded["holders"][0]["available_atomic"],
+    json!((u128::MAX - 100_000_000).to_string())
+  );
+}
+
+/// A holder's balance exists whether or not they ever offered a lot for sale,
+/// so the ledger answer must carry every ticker they hold, in the same exact
+/// atomic units the market contract uses.
+#[test]
+fn serializes_drc20_address_balances_as_exact_atomic_strings() {
+  let inventory = Drc20AddressInventory {
+    chain: "dogecoin",
+    drc20_index_enabled: true,
+    block_count: 6_400_001,
+    block_hash: "cd".repeat(32),
+    address: "D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq".to_string(),
+    inventory_complete: true,
+    total_count: 2,
+    next_cursor: Some("1".to_string()),
+    balances: vec![Drc20AddressBalanceItem {
+      ticker: "DOGI".to_string(),
+      decimals: 18,
+      overall_atomic: u128::MAX.to_string(),
+      transferable_atomic: "100000000".to_string(),
+      available_atomic: (u128::MAX - 100_000_000).to_string(),
+    }],
+  };
+
+  let encoded = serde_json::to_value(inventory).unwrap();
+  assert_eq!(encoded["chain"], json!("dogecoin"));
+  assert_eq!(encoded["drc20_index_enabled"], true);
+  assert_eq!(encoded["inventory_complete"], true);
+  assert_eq!(
+    encoded["address"],
+    json!("D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq")
+  );
+  assert_eq!(encoded["next_cursor"], json!("1"));
+  assert_eq!(encoded["balances"][0]["ticker"], json!("DOGI"));
+  assert_eq!(encoded["balances"][0]["decimals"], json!(18));
+  assert_eq!(
+    encoded["balances"][0]["overall_atomic"],
+    json!(u128::MAX.to_string())
+  );
+  assert_eq!(
+    encoded["balances"][0]["available_atomic"],
     json!((u128::MAX - 100_000_000).to_string())
   );
 }
