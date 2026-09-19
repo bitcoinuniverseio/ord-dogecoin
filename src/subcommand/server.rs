@@ -11,6 +11,7 @@ use {
   crate::{
     authority_api::{
       checked_funding_limit, checked_inventory_limit, checked_offset_cursor,
+      Drc20AddressBalanceItem, Drc20AddressInventory,
       Drc20HolderInventory, Drc20HolderInventoryItem, Drc20TokenDetail, Drc20TokenInventory,
       Drc20TokenInventoryItem, DuneTokenDetail, DuneTokenInventory, DuneTokenInventoryItem,
       Drc20DecisionCheckpoint, Drc20DecisionCoverage, Drc20OperationDecision,
@@ -364,6 +365,10 @@ impl Server {
         .route(
           "/api/v1/drc20/tokens/:tick/holders",
           get(Self::drc20_holder_inventory),
+        )
+        .route(
+          "/api/v1/drc20/addresses/:address",
+          get(Self::drc20_address_inventory),
         )
         .route("/api/v1/dunes/tokens", get(Self::dune_token_inventory))
         .route(
@@ -3243,10 +3248,13 @@ impl Server {
 
     let mut tokens = Vec::new();
     for info in catalog.iter().skip(offset).take(limit) {
+      // A failed holder read is not a token with no holders. Collapsing the
+      // two made an index error indistinguishable from an unheld token, and
+      // the zero travelled downstream as a fact about the ledger.
       let holder_count = index
         .get_drc20_token_holder(&info.tick.clone())
         .map(|holders| holders.len())
-        .unwrap_or(0);
+        .map_err(|error| ServerError::BadRequest(error.to_string()))?;
       let remaining = info.supply.saturating_sub(info.minted);
       tokens.push(Drc20TokenInventoryItem {
         ticker: info.tick.to_string(),
@@ -3305,10 +3313,11 @@ impl Server {
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
       .ok_or_not_found(|| "indexed chain tip")?;
+    // A failed holder read is not a token with no holders.
     let holder_count = index
       .get_drc20_token_holder(&info.tick.clone())
       .map(|holders| holders.len())
-      .unwrap_or(0);
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
     let remaining = info.supply.saturating_sub(info.minted);
 
     Ok(
@@ -3403,6 +3412,83 @@ impl Server {
           None
         },
         holders,
+      })
+      .into_response(),
+    )
+  }
+
+  /// Every DRC-20 balance the ledger records for one address.
+  ///
+  /// The market knows which lots an address has offered for sale; only the
+  /// ledger knows what it holds. Reading ownership from the market answered
+  /// "no balance" for every holder who had simply never listed anything, so
+  /// this reads the balances themselves, in exact atomic units.
+  async fn drc20_address_inventory(
+    Extension(index): Extension<Arc<Index>>,
+    Path(address): Path<String>,
+    Query(query): Query<Drc20InventoryQuery>,
+  ) -> ServerResult<Response> {
+    let limit = checked_inventory_limit(query.limit)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let offset = checked_offset_cursor(query.cursor.as_deref())
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    if !index.has_drc20_index() {
+      return Err(ServerError::BadRequest(DRC20_INDEX_ABSENT.to_string()));
+    }
+    let parsed = Address::from_str(address.as_str())
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    let script_key = ScriptKey::from_address(parsed, index.get_network()?);
+
+    let block_count = index.block_count()?;
+    let block_hash = index
+      .block_hash(block_count.checked_sub(1))?
+      .ok_or_not_found(|| "indexed chain tip")?;
+
+    let mut balances = index
+      .get_drc20_balances(&script_key)
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
+    // A zero balance is a ticker this address no longer holds, not a holding.
+    balances.retain(|balance| balance.overall_balance > 0);
+    // An offset cursor that walks an unordered range repeats and skips rows,
+    // so the order is pinned to the ticker before any page is cut from it.
+    balances.sort_by_key(|balance| Tick::as_str(&balance.tick).to_string());
+    let total_count = balances.len();
+
+    let mut items = Vec::new();
+    for balance in balances.iter().skip(offset).take(limit) {
+      // The ledger stores atomic units; the decimals come from the deployment
+      // so a consumer can present them without this route rounding anything.
+      let decimals = index
+        .get_drc20_token_info(&balance.tick.clone())?
+        .ok_or_not_found(|| format!("DRC-20 token {}", Tick::as_str(&balance.tick)))?
+        .decimal;
+      let overall = balance.overall_balance;
+      let transferable = balance.transferable_balance;
+      items.push(Drc20AddressBalanceItem {
+        ticker: Tick::as_str(&balance.tick).to_string(),
+        decimals,
+        overall_atomic: overall.to_string(),
+        transferable_atomic: transferable.to_string(),
+        available_atomic: overall.saturating_sub(transferable).to_string(),
+      });
+    }
+
+    let next = offset.saturating_add(limit.min(total_count.saturating_sub(offset)));
+    Ok(
+      Json(Drc20AddressInventory {
+        chain: "dogecoin",
+        drc20_index_enabled: true,
+        block_count,
+        block_hash: block_hash.to_string(),
+        address: script_key.to_string(),
+        inventory_complete: true,
+        total_count,
+        next_cursor: if next < total_count {
+          Some(next.to_string())
+        } else {
+          None
+        },
+        balances: items,
       })
       .into_response(),
     )

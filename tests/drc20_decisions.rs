@@ -67,6 +67,9 @@ struct Chain {
   /// Select the chain with the `--regtest` shorthand, as the deployment units
   /// do, instead of `--chain=regtest`.
   shorthand_flag: bool,
+  /// Build the database with `--index-drc20`. Clearing it produces the index
+  /// that must refuse DRC-20 questions rather than answer them empty.
+  index_drc20: bool,
 }
 
 impl Chain {
@@ -82,6 +85,7 @@ impl Chain {
       tempdir,
       cookie,
       shorthand_flag: false,
+      index_drc20: true,
     }
   }
 
@@ -98,8 +102,11 @@ impl Chain {
       .arg("--data-dir")
       .arg(self.tempdir.path())
       .arg("--cookie-file")
-      .arg(&self.cookie)
-      .arg("--index-drc20")
+      .arg(&self.cookie);
+    if self.index_drc20 {
+      command.arg("--index-drc20");
+    }
+    command
       .arg("--index-transactions")
       .env("ORD_INTEGRATION_TEST", "1")
       .env("SUBSIDIES_PATH", repository_file("subsidies.json"))
@@ -822,4 +829,90 @@ fn a_transfer_spent_to_another_address_moves_the_balance_on_regtest() {
     Some(Value::from("4")),
     "{holders:?}"
   );
+}
+
+/// DG-F19. A holder who has never offered a lot for sale still holds the
+/// token. Ownership was being read from the transferable lots, so exactly
+/// this holder - the ordinary case - read back as holding nothing.
+#[test]
+fn an_address_that_never_listed_still_reports_its_ledger_balance() {
+  let mut chain = Chain::new();
+  chain.shorthand_flag = true;
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(3);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x33; 20]).unwrap());
+  let holder_address = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+
+  rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    script_sig: drc20(
+      r#"{"p":"drc-20","op":"deploy","tick":"abcd","max":"1000","lim":"10","dec":"0"}"#,
+    ),
+    output_script: holder.clone(),
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+  rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(2, 0, 0)],
+    script_sig: drc20(r#"{"p":"drc-20","op":"mint","tick":"abcd","amt":"10","note":"held"}"#),
+    output_script: holder,
+    ..Default::default()
+  });
+  rpc.mine_blocks(1);
+
+  let server = chain.serve();
+  server.wait_for_block_count(6);
+
+  // Nothing was ever inscribed as transferable, so the market source this
+  // ownership used to be read from is empty.
+  let (status, transferables) = server.json("/api/v1/drc20/transferables");
+  assert_eq!(status, 200, "{transferables}");
+  assert_eq!(
+    transferables["transferables"].as_array().unwrap().len(),
+    0,
+    "{transferables}"
+  );
+
+  // The ledger still knows exactly what the address holds.
+  let (status, inventory) = server.json(&format!(
+    "/api/v1/drc20/addresses/{holder_address}"
+  ));
+  assert_eq!(status, 200, "{inventory}");
+  assert_eq!(inventory["chain"], "dogecoin", "{inventory}");
+  assert_eq!(inventory["drc20_index_enabled"], true, "{inventory}");
+  assert_eq!(inventory["inventory_complete"], true, "{inventory}");
+  assert_eq!(inventory["address"], holder_address.as_str(), "{inventory}");
+  assert_eq!(inventory["total_count"], 1, "{inventory}");
+  assert_eq!(inventory["next_cursor"], Value::Null, "{inventory}");
+
+  let balance = &inventory["balances"][0];
+  assert_eq!(balance["ticker"], "abcd", "{inventory}");
+  assert_eq!(balance["decimals"], 0, "{inventory}");
+  assert_eq!(balance["overall_atomic"], "10", "{inventory}");
+  assert_eq!(balance["transferable_atomic"], "0", "{inventory}");
+  assert_eq!(balance["available_atomic"], "10", "{inventory}");
+}
+
+/// A database built without `--index-drc20` must refuse the address route
+/// rather than answer that the address holds nothing.
+#[test]
+fn an_index_without_drc20_refuses_the_address_ledger() {
+  let mut chain = Chain::new();
+  chain.shorthand_flag = true;
+  chain.index_drc20 = false;
+  chain.rpc.mine_blocks(3);
+
+  let holder = Script::new_p2pkh(&bitcoin::PubkeyHash::from_slice(&[0x44; 20]).unwrap());
+  let holder_address = bitcoin::Address::from_script(&holder, Network::Regtest)
+    .unwrap()
+    .to_string();
+
+  let server = chain.serve();
+  server.wait_for_block_count(4);
+
+  let (status, _) = server.json(&format!("/api/v1/drc20/addresses/{holder_address}"));
+  assert_eq!(status, 400);
 }
