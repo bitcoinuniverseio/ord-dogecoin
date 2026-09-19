@@ -323,6 +323,35 @@ pub struct Drc20HolderInventoryItem {
   pub available_atomic: String,
 }
 
+/// One ticker balance held by a single address, in exact atomic units.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Drc20AddressBalanceItem {
+  pub ticker: String,
+  pub decimals: u8,
+  pub overall_atomic: String,
+  pub transferable_atomic: String,
+  pub available_atomic: String,
+}
+
+/// Everything the DRC-20 ledger records for one address.
+///
+/// A balance exists whether or not its holder has put a transferable lot up
+/// for sale, so this answers ownership from the ledger rather than from the
+/// market.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Drc20AddressInventory {
+  pub chain: &'static str,
+  /// False when this database was created without `--index-drc20`.
+  pub drc20_index_enabled: bool,
+  pub block_count: u32,
+  pub block_hash: String,
+  pub address: String,
+  pub inventory_complete: bool,
+  pub total_count: usize,
+  pub next_cursor: Option<String>,
+  pub balances: Vec<Drc20AddressBalanceItem>,
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Drc20HolderInventory {
   pub chain: &'static str,
