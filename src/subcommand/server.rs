@@ -3243,10 +3243,13 @@ impl Server {
 
     let mut tokens = Vec::new();
     for info in catalog.iter().skip(offset).take(limit) {
+      // A failed holder read is not a token with no holders. Collapsing the
+      // two made an index error indistinguishable from an unheld token, and
+      // the zero travelled downstream as a fact about the ledger.
       let holder_count = index
         .get_drc20_token_holder(&info.tick.clone())
         .map(|holders| holders.len())
-        .unwrap_or(0);
+        .map_err(|error| ServerError::BadRequest(error.to_string()))?;
       let remaining = info.supply.saturating_sub(info.minted);
       tokens.push(Drc20TokenInventoryItem {
         ticker: info.tick.to_string(),
@@ -3305,10 +3308,11 @@ impl Server {
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
       .ok_or_not_found(|| "indexed chain tip")?;
+    // A failed holder read is not a token with no holders.
     let holder_count = index
       .get_drc20_token_holder(&info.tick.clone())
       .map(|holders| holders.len())
-      .unwrap_or(0);
+      .map_err(|error| ServerError::BadRequest(error.to_string()))?;
     let remaining = info.supply.saturating_sub(info.minted);
 
     Ok(
