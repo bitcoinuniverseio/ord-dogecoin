@@ -2976,7 +2976,7 @@ impl Server {
       if let Some(cursor) = query.cursor {
         logs.retain(|log| log.inscription_number < cursor);
       }
-      logs.sort_unstable_by(|left, right| right.inscription_number.cmp(&left.inscription_number));
+      logs.sort_unstable_by_key(|log| std::cmp::Reverse(log.inscription_number));
       if logs.len() > limit {
         logs.truncate(limit);
         next_cursor = logs.last().map(|log| log.inscription_number.to_string());
