@@ -70,6 +70,9 @@ struct Chain {
   /// Build the database with `--index-drc20`. Clearing it produces the index
   /// that must refuse DRC-20 questions rather than answer them empty.
   index_drc20: bool,
+  /// Build the database with `--index-transactions`. Without it the ledger
+  /// must read earlier transactions from the node instead.
+  index_transactions: bool,
 }
 
 impl Chain {
@@ -86,6 +89,7 @@ impl Chain {
       cookie,
       shorthand_flag: false,
       index_drc20: true,
+      index_transactions: true,
     }
   }
 
@@ -106,8 +110,10 @@ impl Chain {
     if self.index_drc20 {
       command.arg("--index-drc20");
     }
+    if self.index_transactions {
+      command.arg("--index-transactions");
+    }
     command
-      .arg("--index-transactions")
       .env("ORD_INTEGRATION_TEST", "1")
       .env("SUBSIDIES_PATH", repository_file("subsidies.json"))
       .env("STARTING_SATS_PATH", repository_file("starting_sats.json"))
@@ -754,8 +760,22 @@ fn holder_addresses_carry_the_prefix_of_the_indexed_chain() {
 /// an address string whose version byte the parser tags as testnet.
 #[test]
 fn a_transfer_spent_to_another_address_moves_the_balance_on_regtest() {
+  transfer_moves_the_balance(true);
+}
+
+/// The spend reads the transfer inscription's previous owner from a
+/// transaction mined in an earlier block. Without `--index-transactions` the
+/// index holds no copy of it, so the ledger has to read it from the node and
+/// reach exactly the same balances.
+#[test]
+fn a_transfer_moves_the_balance_without_the_transaction_index() {
+  transfer_moves_the_balance(false);
+}
+
+fn transfer_moves_the_balance(index_transactions: bool) {
   let mut chain = Chain::new();
   chain.shorthand_flag = true;
+  chain.index_transactions = index_transactions;
   let rpc = &chain.rpc;
   rpc.mine_blocks(3);
 

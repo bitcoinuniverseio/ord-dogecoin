@@ -570,6 +570,7 @@ impl<'index> Updater<'_> {
           &mut drc20_operation_decisions,
           &inscription_id_to_inscription_entry,
           &mut transaction_id_to_transaction,
+          index,
         )?
         .index_block(
           BlockContext {
