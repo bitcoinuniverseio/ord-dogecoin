@@ -106,6 +106,10 @@ pub struct Drc20TransferableInventory {
   pub block_hash: String,
   pub inventory_complete: bool,
   pub transferables: Vec<Drc20TransferableInventoryItem>,
+  /// Only on a paged request: the cursor for the next, older page, or null on
+  /// the last one. An unpaged response omits it, so it is unchanged.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub next_cursor: Option<Option<String>>,
 }
 
 /// One inscription in the field layout upstream `ord` answers for

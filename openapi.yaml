@@ -240,8 +240,28 @@ paths:
       description: >-
         Answers "what can be spent right now" for DRC-20. This is not the token
         catalog: a deployment with no outstanding transferable does not appear
-        here. Use /api/v1/drc20/tokens for the catalog. Not paginated.
+        here. Use /api/v1/drc20/tokens for the catalog. Without cursor or
+        limit the whole inventory is returned oldest first and next_cursor is
+        omitted. With either, it is paged newest first by inscription number
+        and next_cursor is present (null on the last page).
       operationId: getDrc20TransferableInventory
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: The value returned as next_cursor on the previous page
+          schema:
+            type: integer
+            format: int64
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of transferables (1-1000, default 250)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 250
       responses:
         '200':
           description: Outstanding DRC-20 transferables at the indexed checkpoint
@@ -259,6 +279,10 @@ paths:
                     type: string
                   inventory_complete:
                     type: boolean
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Present only on a paged request
                   transferables:
                     type: array
                     items:

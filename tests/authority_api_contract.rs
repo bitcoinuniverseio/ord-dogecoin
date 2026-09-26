@@ -117,10 +117,13 @@ fn serializes_exact_drc20_and_custody_values_as_strings() {
         address: Some("D6VhYBz1fKqA4A3nQrVZqfDkFvX2F4j3Zq".to_string()),
       }),
     }],
+    next_cursor: None,
   };
 
   let encoded = serde_json::to_value(inventory).unwrap();
   assert_eq!(encoded["inventory_complete"], true);
+  // An unpaged response keeps its original shape.
+  assert!(encoded.get("next_cursor").is_none());
   assert_eq!(
     encoded["transferables"][0]["amount_atomic"],
     json!(u128::MAX.to_string())
