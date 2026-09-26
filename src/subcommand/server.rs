@@ -174,6 +174,12 @@ struct Drc20InventoryQuery {
 }
 
 #[derive(Deserialize)]
+struct Drc20TransferableQuery {
+  cursor: Option<u64>,
+  limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
 struct Drc20OperationsQuery {
   txid: Option<String>,
 }
@@ -2946,6 +2952,7 @@ impl Server {
   async fn drc20_transferable_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20TransferableQuery>,
   ) -> ServerResult<Response> {
     let block_count = index.block_count()?;
     let block_hash = index
@@ -2954,7 +2961,29 @@ impl Server {
     let mut blocks = HashMap::<u32, Block>::new();
     let mut transferables = Vec::new();
 
-    for transferable in index.get_drc20_transferables()? {
+    // Without `limit` or `cursor` the whole inventory is served oldest first,
+    // exactly as before. On mainnet that is far larger than any consumer can
+    // accept in one response, so a paged request walks it newest first by
+    // inscription number (genesis order) and materializes only its own page.
+    // The cursor is the last inscription number returned; numbers are unique,
+    // so a page can neither repeat nor skip a transferable at one height.
+    let paged = query.limit.is_some() || query.cursor.is_some();
+    let mut logs = index.get_drc20_transferables()?;
+    let mut next_cursor = None;
+    if paged {
+      let limit = checked_inventory_limit(query.limit)
+        .map_err(|message| ServerError::BadRequest(message.to_string()))?;
+      if let Some(cursor) = query.cursor {
+        logs.retain(|log| log.inscription_number < cursor);
+      }
+      logs.sort_unstable_by(|left, right| right.inscription_number.cmp(&left.inscription_number));
+      if logs.len() > limit {
+        logs.truncate(limit);
+        next_cursor = logs.last().map(|log| log.inscription_number.to_string());
+      }
+    }
+
+    for transferable in logs {
       let token = index
         .get_drc20_token_info(&transferable.tick)?
         .ok_or_not_found(|| format!("DRC-20 token {}", transferable.tick))?;
@@ -3023,13 +3052,15 @@ impl Server {
       });
     }
 
-    transferables.sort_by(|left, right| {
-      left
-        .genesis_height
-        .cmp(&right.genesis_height)
-        .then(left.transaction_index.cmp(&right.transaction_index))
-        .then(left.inscription_index.cmp(&right.inscription_index))
-    });
+    if !paged {
+      transferables.sort_by(|left, right| {
+        left
+          .genesis_height
+          .cmp(&right.genesis_height)
+          .then(left.transaction_index.cmp(&right.transaction_index))
+          .then(left.inscription_index.cmp(&right.inscription_index))
+      });
+    }
 
     Ok(
       Json(Drc20TransferableInventory {
@@ -3038,6 +3069,7 @@ impl Server {
         block_hash: block_hash.to_string(),
         inventory_complete: true,
         transferables,
+        next_cursor: paged.then_some(next_cursor),
       })
       .into_response(),
     )
