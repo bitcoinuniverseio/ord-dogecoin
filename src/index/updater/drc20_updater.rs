@@ -41,9 +41,9 @@ pub(super) struct Drc20Updater<'a, 'tx> {
     drc20_operation_decisions: &'a mut Table<'tx, &'static OperationDecisionKey, &'static [u8]>,
     inscription_id_to_inscription_entry: &'a Table<'tx, &'static InscriptionIdValue, InscriptionEntryValue>,
     transaction_id_to_transaction: &'a mut Table<'tx, &'static TxidValue, &'static [u8]>,
-    client: &'a bitcoincore_rpc::Client,
-    // Output scripts of the block being indexed. Most satpoints a DRC-20
-    // message touches were created by this block, so they never need a read.
+    index: &'a Index,
+    // Output scripts of the block being indexed, plus earlier transactions its
+    // DRC-20 messages touch, fetched from the node in one batch per block.
     block_output_scripts: HashMap<Txid, Vec<bitcoin::Script>>,
 }
 
@@ -57,7 +57,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         drc20_operation_decisions: &'a mut Table<'tx, &'static OperationDecisionKey, &'static [u8]>,
         inscription_id_to_inscription_entry: &'a Table<'tx, &'static InscriptionIdValue, InscriptionEntryValue>,
         transaction_id_to_transaction: &'a mut Table<'tx, &'static TxidValue, &'static [u8]>,
-        client: &'a bitcoincore_rpc::Client,
+        index: &'a Index,
     ) -> Result<Self> {
         Ok(Self {
             drc20_token_info,
@@ -68,7 +68,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
             drc20_operation_decisions,
             inscription_id_to_inscription_entry,
             transaction_id_to_transaction,
-            client,
+            index,
             block_output_scripts: HashMap::new(),
         })
     }
@@ -91,6 +91,9 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
                 )
             })
             .collect();
+        if !self.index.has_transaction_index() {
+            self.prefetch_satpoint_transactions(&operations);
+        }
         for (tx, txid) in block.txdata.iter() {
             // skip coinbase transaction.
             if tx
@@ -718,6 +721,51 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         )
     }
 
+    /// Without a transaction index every satpoint outside this block is a node
+    /// read, and resolving them one message at a time serialises thousands of
+    /// round trips per block. Fetch them all up front in parallel batches. A
+    /// failed prefetch only costs speed: the per-message lookup still reads
+    /// whatever is missing.
+    fn prefetch_satpoint_transactions(&mut self, operations: &HashMap<Txid, Vec<InscriptionOp>>) {
+        let txids: Vec<Txid> = operations
+            .values()
+            .flatten()
+            .flat_map(|op| {
+                std::iter::once(op.old_satpoint.outpoint.txid)
+                    .chain(op.new_satpoint.map(|satpoint| satpoint.outpoint.txid))
+            })
+            .filter(|txid| *txid != Txid::all_zeros() && !self.block_output_scripts.contains_key(txid))
+            .collect::<HashSet<Txid>>()
+            .into_iter()
+            .collect();
+        if txids.is_empty() {
+            return;
+        }
+
+        const PARALLEL_REQUESTS: usize = 32;
+        let chunk_size = txids.len().div_ceil(PARALLEL_REQUESTS);
+        let fetched = Fetcher::new(&self.index.rpc_url, self.index.auth.clone()).and_then(|fetcher| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(futures::future::try_join_all(
+                    txids.chunks(chunk_size).map(|chunk| fetcher.get_transactions(chunk.to_vec())),
+                ))
+        });
+
+        match fetched {
+            Ok(chunks) => {
+                for (txid, tx) in txids.iter().zip(chunks.into_iter().flatten()) {
+                    self.block_output_scripts.insert(
+                        *txid,
+                        tx.output.into_iter().map(|output| output.script_pubkey).collect(),
+                    );
+                }
+            }
+            Err(error) => log::warn!("DRC-20 satpoint prefetch failed, reading one by one: {error}"),
+        }
+    }
+
     pub(super) fn get_script_key_on_satpoint(
         &self,
         satpoint: SatPoint,
@@ -739,7 +787,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         {
             consensus::encode::deserialize(transaction.value())?
         } else {
-            self.client
+            self.index.client
                 .get_raw_transaction(&satpoint.outpoint.txid)
                 .map_err(|error| anyhow!("{}: {error}", missing()))?
         };
