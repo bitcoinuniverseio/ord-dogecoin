@@ -21,6 +21,11 @@ pub(crate) struct Arguments {
 }
 impl Arguments {
   pub(crate) fn run(self) -> SubcommandResult {
+    // Dogecoin Core 1.14.9 defines mainnet, testnet and regtest only. A
+    // signet flag would select Bitcoin parameters no Dogecoin node serves.
+    if self.options.chain() == Chain::Signet {
+      bail!("signet does not exist for Dogecoin; use --chain mainnet, testnet or regtest");
+    }
     self.subcommand.run(self.options)
   }
 }

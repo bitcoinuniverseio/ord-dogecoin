@@ -17,6 +17,12 @@ mod drc20_updater;
 mod dune_updater;
 mod inscription_updater;
 
+/// Headers fetched per batched RPC call below the first inscription height.
+const HEADER_BATCH: u32 = 1000;
+
+/// Blocks per write transaction while only headers are indexed.
+const HEADER_ONLY_COMMIT_INTERVAL: u32 = 25_000;
+
 pub(crate) struct BlockData {
   pub(crate) header: BlockHeader,
   pub(crate) txdata: Vec<(Transaction, Txid)>,
@@ -64,7 +70,7 @@ impl<'index> Updater<'_> {
 
   pub(crate) fn update_index(&mut self) -> Result {
     let mut wtx = self.index.begin_write()?;
-    let starting_height = u32::try_from(self.index.client.get_block_count()?).unwrap() + 1;
+    let starting_height = u32::try_from(self.index.client().get_block_count()?).unwrap() + 1;
 
     wtx
       .open_table(WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP)?
@@ -111,7 +117,7 @@ impl<'index> Updater<'_> {
         progress_bar.inc(1);
 
         if progress_bar.position() > progress_bar.length().unwrap() {
-          if let Ok(count) = self.index.client.get_block_count() {
+          if let Ok(count) = self.index.client().get_block_count() {
             progress_bar.set_length(count + 1);
           } else {
             log::warn!("Failed to fetch latest block height");
@@ -121,7 +127,22 @@ impl<'index> Updater<'_> {
 
       uncommitted += 1;
 
-      if uncommitted == 1000 {
+      // Header-only blocks below the first inscription height write a few
+      // bytes each, so committing them every 1000 blocks spends most of a
+      // fresh index's time in fsync. They commit every
+      // HEADER_ONLY_COMMIT_INTERVAL blocks; savepoints are only taken near the
+      // node tip, where blocks carry inscriptions and commit every 1000.
+      let commit_interval =
+        if !self.index.index_sats && self.height < self.index.first_inscription_height {
+          HEADER_ONLY_COMMIT_INTERVAL
+        } else {
+          1000
+        };
+
+      // Also commit at every savepoint height near the node tip: savepoints
+      // are only taken on a commit at such a height, and without them a
+      // reorg right after catching up has nothing to roll back to.
+      if uncommitted >= commit_interval || Reorg::savepoint_due(self.height, starting_height) {
         self.commit(wtx, value_cache)?;
         value_cache = HashMap::new();
         uncommitted = 0;
@@ -186,6 +207,34 @@ impl<'index> Updater<'_> {
         }
       }
 
+      // Below the first inscription height only headers are indexed. Fetch
+      // them in batches: two RPC round trips per block made a fresh index of
+      // a long chain (Dogecoin testnet has tens of millions of blocks) take a
+      // day. Anything the batch cannot answer, such as heights past the node
+      // tip, falls through to the one-block path with its retries.
+      if !index_sats && height < first_inscription_height {
+        let end = first_inscription_height
+          .min(height.saturating_add(HEADER_BATCH))
+          .min(height_limit.unwrap_or(u32::MAX));
+        match Self::get_headers_batch(&client, height, end) {
+          Ok(Some(headers)) => {
+            for header in headers {
+              if let Err(err) = tx.send(BlockData {
+                header,
+                txdata: Vec::new(),
+              }) {
+                log::info!("Block receiver disconnected: {err}");
+                return;
+              }
+              height += 1;
+            }
+            continue;
+          }
+          Ok(None) => {}
+          Err(err) => log::warn!("batched header fetch from {height} failed: {err}"),
+        }
+      }
+
       match Self::get_block_with_retries(&client, height, index_sats, first_inscription_height) {
         Ok(Some(block)) => {
           if let Err(err) = tx.send(block.into()) {
@@ -203,6 +252,58 @@ impl<'index> Updater<'_> {
     });
 
     Ok(rx)
+  }
+
+  /// Headers of `start..end` in two batched calls, or `None` when the node
+  /// cannot answer every height (the batch then yields to the one-block path).
+  fn get_headers_batch(client: &Client, start: u32, end: u32) -> Result<Option<Vec<BlockHeader>>> {
+    use serde_json::value::{to_raw_value, RawValue};
+
+    if start >= end {
+      return Ok(None);
+    }
+    let rpc = client.get_jsonrpc_client();
+
+    let params = (start..end)
+      .map(|height| Ok(vec![to_raw_value(&height)?]))
+      .collect::<Result<Vec<Vec<Box<RawValue>>>>>()?;
+    let requests = params
+      .iter()
+      .map(|params| rpc.build_request("getblockhash", params))
+      .collect::<Vec<_>>();
+    let mut hashes = Vec::with_capacity(requests.len());
+    for response in rpc.send_batch(&requests)? {
+      let Some(Ok(hash)) = response.map(|response| response.result::<String>()) else {
+        return Ok(None);
+      };
+      hashes.push(hash);
+    }
+
+    let params = hashes
+      .iter()
+      .map(|hash| Ok(vec![to_raw_value(hash)?, to_raw_value(&false)?]))
+      .collect::<Result<Vec<Vec<Box<RawValue>>>>>()?;
+    let requests = params
+      .iter()
+      .map(|params| rpc.build_request("getblockheader", params))
+      .collect::<Vec<_>>();
+    let mut headers = Vec::with_capacity(requests.len());
+    for (response, hash) in rpc.send_batch(&requests)?.into_iter().zip(&hashes) {
+      let Some(Ok(header)) = response.map(|response| response.result::<String>()) else {
+        return Ok(None);
+      };
+      // Merge-mined headers are followed by their AuxPoW; like the RPC
+      // client's own header decoding, read the 80-byte header and ignore it.
+      let (header, _) =
+        consensus::encode::deserialize_partial::<BlockHeader>(&hex::decode(header)?)?;
+      ensure!(
+        header.block_hash().to_string() == *hash,
+        "node returned header {} for block {hash}",
+        header.block_hash()
+      );
+      headers.push(header);
+    }
+    Ok(Some(headers))
   }
 
   fn get_block_with_retries(
@@ -349,6 +450,25 @@ impl<'index> Updater<'_> {
       return Err(anyhow!("Previous block did not consume all input values"));
     };
 
+    // A header-only block (below the first inscription height, without the
+    // sat index, outside dune indexing) changes nothing but its block hash
+    // and the feed journal range; the general path below would open two
+    // dozen tables to write that. Genesis takes the general path, so every
+    // table exists from the first committed block as before.
+    if self.height > 0
+      && block.txdata.is_empty()
+      && !index.index_sats
+      && self.height < index.first_inscription_height
+      && !(index.index_dunes && self.height >= index.first_dune_height)
+    {
+      dogemap_feed::record_block(wtx, self.height, Vec::new(), index.first_inscription_height)?;
+      wtx
+        .open_table(HEIGHT_TO_BLOCK_HASH)?
+        .insert(&self.height, &block.header.block_hash().store())?;
+      self.height += 1;
+      return Ok(());
+    }
+
     let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
     let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
     let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
@@ -417,6 +537,8 @@ impl<'index> Updater<'_> {
       .map(|lost_sats| lost_sats.value())
       .unwrap_or(0);
 
+    let feed_journal;
+
     {
       let mut inscription_updater = InscriptionUpdater::new(
         self.height,
@@ -484,6 +606,7 @@ impl<'index> Updater<'_> {
           self.index_transaction_sats(
             tx,
             *txid,
+            u32::try_from(tx_offset)?,
             &mut sat_to_satpoint,
             &mut input_sat_ranges,
             &mut sat_ranges_written,
@@ -499,6 +622,7 @@ impl<'index> Updater<'_> {
           self.index_transaction_sats(
             tx,
             *txid,
+            0,
             &mut sat_to_satpoint,
             &mut coinbase_inputs,
             &mut sat_ranges_written,
@@ -534,10 +658,23 @@ impl<'index> Updater<'_> {
           outpoint_to_sat_ranges.insert(&OutPoint::null().store(), lost_sat_ranges.as_slice())?;
         }
       } else {
-        for (tx, txid) in block.txdata.iter().skip(1).chain(block.txdata.first()) {
-          lost_sats += inscription_updater.index_transaction_inscriptions(tx, *txid, None)?;
+        for (tx_index, (tx, txid)) in block
+          .txdata
+          .iter()
+          .enumerate()
+          .skip(1)
+          .chain(block.txdata.iter().enumerate().take(1))
+        {
+          lost_sats += inscription_updater.index_transaction_inscriptions(
+            tx,
+            *txid,
+            u32::try_from(tx_index)?,
+            None,
+          )?;
         }
       }
+
+      feed_journal = std::mem::take(&mut inscription_updater.journal.records);
 
       if index.index_drc20 && self.height >= index.first_inscription_height {
         let operations = inscription_updater.operations.clone();
@@ -570,6 +707,7 @@ impl<'index> Updater<'_> {
           &mut drc20_operation_decisions,
           &inscription_id_to_inscription_entry,
           &mut transaction_id_to_transaction,
+          index,
         )?
         .index_block(
           BlockContext {
@@ -608,6 +746,18 @@ impl<'index> Updater<'_> {
       }
     }
 
+    // Dogemap feed journal: this block's location records and the journal
+    // range, in the same write transaction as the block hash, so a committed
+    // block always has its complete journal and a rolled-back one has none.
+    // Independent of the DRC-20 and Dunes flags, which only read their own
+    // copies of the updater's operations.
+    dogemap_feed::record_block(
+      wtx,
+      self.height,
+      feed_journal,
+      index.first_inscription_height,
+    )?;
+
     height_to_block_hash.insert(&self.height, &block.header.block_hash().store())?;
 
     self.height += 1;
@@ -625,6 +775,7 @@ impl<'index> Updater<'_> {
     &mut self,
     tx: &Transaction,
     txid: Txid,
+    tx_index: u32,
     sat_to_satpoint: &mut Table<u64, &SatPointValue>,
     input_sat_ranges: &mut VecDeque<(u64, u64)>,
     sat_ranges_written: &mut u64,
@@ -633,7 +784,12 @@ impl<'index> Updater<'_> {
     index_inscriptions: bool,
   ) -> Result {
     if index_inscriptions {
-      inscription_updater.index_transaction_inscriptions(tx, txid, Some(input_sat_ranges))?;
+      inscription_updater.index_transaction_inscriptions(
+        tx,
+        txid,
+        tx_index,
+        Some(input_sat_ranges),
+      )?;
     }
 
     for (vout, output) in tx.output.iter().enumerate() {

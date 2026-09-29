@@ -70,6 +70,9 @@ struct Chain {
   /// Build the database with `--index-drc20`. Clearing it produces the index
   /// that must refuse DRC-20 questions rather than answer them empty.
   index_drc20: bool,
+  /// Build the database with `--index-transactions`. Without it the ledger
+  /// must read earlier transactions from the node instead.
+  index_transactions: bool,
 }
 
 impl Chain {
@@ -86,6 +89,7 @@ impl Chain {
       cookie,
       shorthand_flag: false,
       index_drc20: true,
+      index_transactions: true,
     }
   }
 
@@ -106,8 +110,10 @@ impl Chain {
     if self.index_drc20 {
       command.arg("--index-drc20");
     }
+    if self.index_transactions {
+      command.arg("--index-transactions");
+    }
     command
-      .arg("--index-transactions")
       .env("ORD_INTEGRATION_TEST", "1")
       .env("SUBSIDIES_PATH", repository_file("subsidies.json"))
       .env("STARTING_SATS_PATH", repository_file("starting_sats.json"))
@@ -754,8 +760,22 @@ fn holder_addresses_carry_the_prefix_of_the_indexed_chain() {
 /// an address string whose version byte the parser tags as testnet.
 #[test]
 fn a_transfer_spent_to_another_address_moves_the_balance_on_regtest() {
+  transfer_moves_the_balance(true);
+}
+
+/// The spend reads the transfer inscription's previous owner from a
+/// transaction mined in an earlier block. Without `--index-transactions` the
+/// index holds no copy of it, so the ledger has to read it from the node and
+/// reach exactly the same balances.
+#[test]
+fn a_transfer_moves_the_balance_without_the_transaction_index() {
+  transfer_moves_the_balance(false);
+}
+
+fn transfer_moves_the_balance(index_transactions: bool) {
   let mut chain = Chain::new();
   chain.shorthand_flag = true;
+  chain.index_transactions = index_transactions;
   let rpc = &chain.rpc;
   rpc.mine_blocks(3);
 
@@ -914,5 +934,84 @@ fn an_index_without_drc20_refuses_the_address_ledger() {
   server.wait_for_block_count(4);
 
   let (status, _) = server.json(&format!("/api/v1/drc20/addresses/{holder_address}"));
+  assert_eq!(status, 400);
+}
+
+#[test]
+fn transferables_page_newest_first_and_stay_whole_without_a_limit() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(5);
+
+  // Block 6: deploy. Block 7: mint 10. Blocks 8-10: one inscribe-transfer each.
+  inscribe(
+    rpc,
+    (1, 0, 0),
+    r#"{"p":"drc-20","op":"deploy","tick":"abcd","max":"1000","lim":"10","dec":"0"}"#,
+  );
+  rpc.mine_blocks(1);
+  inscribe(
+    rpc,
+    (2, 0, 0),
+    r#"{"p":"drc-20","op":"mint","tick":"abcd","amt":"10","note":"valid-mint"}"#,
+  );
+  rpc.mine_blocks(1);
+  let mut transfers = Vec::new();
+  for (input, amount) in [(3, 1), (4, 2), (5, 3)] {
+    transfers.push(inscribe(
+      rpc,
+      (input, 0, 0),
+      &format!(
+        r#"{{"p":"drc-20","op":"transfer","tick":"abcd","amt":"{amount}","note":"transfer"}}"#
+      ),
+    ));
+    rpc.mine_blocks(1);
+  }
+
+  let server = chain.serve();
+  server.wait_for_block_count(11);
+
+  let ids = |inventory: &Value| {
+    inventory["transferables"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .map(|item| {
+        item["transfer_inscription_id"]
+          .as_str()
+          .unwrap()
+          .to_string()
+      })
+      .collect::<Vec<_>>()
+  };
+  let id = |index: usize| format!("{}i0", transfers[index]);
+
+  // Unpaged: every transferable, oldest first, and no cursor field at all.
+  let (status, whole) = server.json("/api/v1/drc20/transferables");
+  assert_eq!(status, 200, "{whole}");
+  assert_eq!(ids(&whole), vec![id(0), id(1), id(2)]);
+  assert!(whole.get("next_cursor").is_none(), "{whole}");
+
+  // Paged: newest first, and the cursor walks to the end without overlap.
+  let (status, first) = server.json("/api/v1/drc20/transferables?limit=2");
+  assert_eq!(status, 200, "{first}");
+  assert_eq!(ids(&first), vec![id(2), id(1)]);
+  assert_eq!(first["block_hash"], whole["block_hash"]);
+  let cursor = first["next_cursor"].as_str().unwrap().to_string();
+  assert_eq!(
+    first["transferables"][1]["inscription_number"],
+    cursor.as_str()
+  );
+
+  let (status, last) = server.json(&format!(
+    "/api/v1/drc20/transferables?limit=2&cursor={cursor}"
+  ));
+  assert_eq!(status, 200, "{last}");
+  assert_eq!(ids(&last), vec![id(0)]);
+  assert_eq!(last["next_cursor"], Value::Null, "{last}");
+
+  let (status, _) = server.json("/api/v1/drc20/transferables?limit=0");
+  assert_eq!(status, 400);
+  let (status, _) = server.json("/api/v1/drc20/transferables?limit=1001");
   assert_eq!(status, 400);
 }
