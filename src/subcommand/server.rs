@@ -3696,6 +3696,7 @@ impl Server {
   async fn funding_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
+    Extension(feed): Extension<Arc<dogemap_feed::FeedState>>,
     Path(address): Path<String>,
     Query(query): Query<FundingInventoryQuery>,
   ) -> ServerResult<Response> {
@@ -3722,6 +3723,8 @@ impl Server {
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
       .ok_or_not_found(|| "indexed chain tip")?;
+    let inventory_complete =
+      crate::authority_api::funding_inventory_complete(feed.node_tip(&index), block_count);
     let mut candidates = Vec::new();
 
     for outpoint in index.get_account_outputs(canonical_address.clone())? {
@@ -3782,7 +3785,7 @@ impl Server {
         block_count,
         block_hash: block_hash.to_string(),
         address: canonical_address,
-        inventory_complete: true,
+        inventory_complete,
         total_count,
         truncated,
         inputs: candidates,

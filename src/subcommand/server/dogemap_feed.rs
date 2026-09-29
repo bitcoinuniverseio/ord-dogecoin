@@ -23,7 +23,7 @@ pub(super) struct FeedState {
 }
 
 impl FeedState {
-  fn node_tip(&self, index: &Index) -> Option<u64> {
+  pub(super) fn node_tip(&self, index: &Index) -> Option<u64> {
     let mut cached = self.node_tip.lock().unwrap();
     if let Some((at, tip)) = *cached {
       if at.elapsed() < NODE_TIP_REFRESH {
