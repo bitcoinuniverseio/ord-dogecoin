@@ -1,0 +1,305 @@
+{
+  "schemaVersion": "dogemap-feed-events-hash-golden-v1",
+  "algorithm": "sha256-rfc8785-dogemap-feed-v1",
+  "description": "Synthetic test vector, not chain data. \"block\" holds the hashed block fields with events exactly as a block page serves them. \"hashInput\" is the projection that is hashed: the same object with rawBody.bytes and rawBody.bodyRef removed from every event. \"serialization\" is its RFC 8785 form (all values are strings, nulls, booleans, objects or arrays, so the scheme reduces to keys sorted by UTF-16 code units, no whitespace and JSON.stringify string escaping) and \"sha256\" is the lowercase hex SHA-256 of its UTF-8 bytes. Provider and indexer tests must reproduce both from \"block\".",
+  "block": {
+    "feedVersion": "dogemap-feed-v1",
+    "parserProfile": "doginals-trac-1.0.2-compat-v1",
+    "orderProfile": "ord-dogecoin-inscription-number-v1",
+    "candidateFilter": "dogemap-candidate-prefilter-v1",
+    "network": "mainnet",
+    "genesisHash": "1a91e3dace36e2be3bf030a65679fe821aa1d6ef92e7c9902eb318182c355691",
+    "height": "4771300",
+    "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+    "parentHash": "fe45b91575f567c0a33c4b344b45ff63e284dfe2f451144bc05a8a7d5c405b44",
+    "scope": {
+      "creations": "dogemap-candidate-prefilter-v1",
+      "transfers": "complete"
+    },
+    "creationCount": "3",
+    "events": [
+      {
+        "type": "creation",
+        "eventOrdinal": "0",
+        "inscriptionId": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2di0",
+        "inscriptionNumber": "180000000",
+        "origin": {
+          "txid": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5"
+        },
+        "completion": {
+          "txid": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+          "txIndex": "3"
+        },
+        "partCount": "1",
+        "contentTypeBase64": "dGV4dC9wbGFpbjtjaGFyc2V0PXV0Zi04",
+        "rawBody": {
+          "encoding": "base64",
+          "byteLength": "15",
+          "sha256": "cb003ce0ab411aef4a7e844b67436ace05f3cc6075872a1a3dee641175ac57ee",
+          "bytes": "NDc3MTAwMC5kb2dlbWFw",
+          "bodyRef": null
+        },
+        "delegate": null,
+        "location": {
+          "status": "assigned",
+          "outpoint": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d:0",
+          "offset": "0",
+          "valueKoinu": "100000",
+          "scriptPubKeyHex": "76a914a7f6bc0e09f89b7a99f4745a44daacd39ce3918e88ac",
+          "address": "DLTCxiMtYgDYcGUn6291qsHXFuLC3mBbsq"
+        }
+      },
+      {
+        "type": "creation",
+        "eventOrdinal": "1",
+        "inscriptionId": "6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036i0",
+        "inscriptionNumber": "180000002",
+        "origin": {
+          "txid": "6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036",
+          "height": "4771298",
+          "blockHash": "51f38112af97085e3eb9d6ba56358779b3240cb1910f0c65f855bbbb64ed2ec5"
+        },
+        "completion": {
+          "txid": "eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+          "txIndex": "5"
+        },
+        "partCount": "2",
+        "contentTypeBase64": "dGV4dC9wbGFpbg==",
+        "rawBody": {
+          "encoding": "base64",
+          "byteLength": "15",
+          "sha256": "e16102de1d7001483066e0d5a4ce4db776732ae3bb2edb0a60fa584a8a45a4f2",
+          "bytes": "NDc3MTAwMS5kb2dlbWFw",
+          "bodyRef": null
+        },
+        "delegate": {
+          "rawBase64": "ihEWX5t0u9cWFCES5SQRGJteP9ij5tUyTGMXSn6GbWsAAAAA",
+          "inscriptionId": "6b6d867e4a17634c32d5e6a3d83f5e9b181124e512211416d7bb749b5f16118ai0"
+        },
+        "location": {
+          "status": "assigned",
+          "outpoint": "eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26:1",
+          "offset": "9007199254740992",
+          "valueKoinu": "9007199254740993",
+          "scriptPubKeyHex": "51",
+          "address": null
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "2",
+        "inscriptionId": "0aafbc73fef38cdfef33a69cca0e46d63ae37f7b904b415fe6c2a67f2f62206ei0",
+        "inscriptionNumber": "1",
+        "txid": "3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d",
+        "txIndex": "7",
+        "from": {
+          "outpoint": "3668ca1ecdab85931844a09f09a3f809562ba0d71963e9662c3936ee978d8724:2",
+          "offset": "0"
+        },
+        "to": {
+          "status": "assigned",
+          "outpoint": "3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d:0",
+          "offset": "5000000000",
+          "valueKoinu": "7000000000",
+          "scriptPubKeyHex": "a914d6639bcf086a9bcb465453850427efd7f1a639f387",
+          "address": "AByrbNRkVQCi1SDkkyUTHtzbCuS97PZc4F"
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "3",
+        "inscriptionId": "1001eb3da96e76441b4076daf05662d58fd306f831c1ce90412e722670fa91eci0",
+        "inscriptionNumber": "179999999",
+        "txid": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8",
+        "txIndex": "0",
+        "from": {
+          "outpoint": "b46e030ef0f2b3c754c00576c1f181c5fdad5fd559d6caa873b0dae630dbc0a5:0",
+          "offset": "4999"
+        },
+        "to": {
+          "status": "assigned",
+          "outpoint": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8:0",
+          "offset": "1000000000004999",
+          "valueKoinu": "1000000000010000",
+          "scriptPubKeyHex": "76a91472732c4308afc2d80044b25fddb502e58d5aa81088ac",
+          "address": "DFaFYUp7xuGnpXXGRVdQ41j3EVH6pd9LNP"
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "4",
+        "inscriptionId": "70a93697311ee09f8d9874ab4b57c830ad3f5bca9951b82551d7e67f04c85cfci0",
+        "inscriptionNumber": "42",
+        "txid": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8",
+        "txIndex": "0",
+        "from": {
+          "outpoint": "ebc908f06d6ee8e59a39c6a1bff9bc943cf167892e345c2292f5a75bdf8babfc:1",
+          "offset": "0"
+        },
+        "to": {
+          "status": "lost",
+          "outpoint": null,
+          "offset": "123",
+          "valueKoinu": null,
+          "scriptPubKeyHex": null,
+          "address": null
+        }
+      }
+    ]
+  },
+  "hashInput": {
+    "feedVersion": "dogemap-feed-v1",
+    "parserProfile": "doginals-trac-1.0.2-compat-v1",
+    "orderProfile": "ord-dogecoin-inscription-number-v1",
+    "candidateFilter": "dogemap-candidate-prefilter-v1",
+    "network": "mainnet",
+    "genesisHash": "1a91e3dace36e2be3bf030a65679fe821aa1d6ef92e7c9902eb318182c355691",
+    "height": "4771300",
+    "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+    "parentHash": "fe45b91575f567c0a33c4b344b45ff63e284dfe2f451144bc05a8a7d5c405b44",
+    "scope": {
+      "creations": "dogemap-candidate-prefilter-v1",
+      "transfers": "complete"
+    },
+    "creationCount": "3",
+    "events": [
+      {
+        "type": "creation",
+        "eventOrdinal": "0",
+        "inscriptionId": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2di0",
+        "inscriptionNumber": "180000000",
+        "origin": {
+          "txid": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5"
+        },
+        "completion": {
+          "txid": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+          "txIndex": "3"
+        },
+        "partCount": "1",
+        "contentTypeBase64": "dGV4dC9wbGFpbjtjaGFyc2V0PXV0Zi04",
+        "rawBody": {
+          "encoding": "base64",
+          "byteLength": "15",
+          "sha256": "cb003ce0ab411aef4a7e844b67436ace05f3cc6075872a1a3dee641175ac57ee"
+        },
+        "delegate": null,
+        "location": {
+          "status": "assigned",
+          "outpoint": "0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d:0",
+          "offset": "0",
+          "valueKoinu": "100000",
+          "scriptPubKeyHex": "76a914a7f6bc0e09f89b7a99f4745a44daacd39ce3918e88ac",
+          "address": "DLTCxiMtYgDYcGUn6291qsHXFuLC3mBbsq"
+        }
+      },
+      {
+        "type": "creation",
+        "eventOrdinal": "1",
+        "inscriptionId": "6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036i0",
+        "inscriptionNumber": "180000002",
+        "origin": {
+          "txid": "6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036",
+          "height": "4771298",
+          "blockHash": "51f38112af97085e3eb9d6ba56358779b3240cb1910f0c65f855bbbb64ed2ec5"
+        },
+        "completion": {
+          "txid": "eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26",
+          "height": "4771300",
+          "blockHash": "8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5",
+          "txIndex": "5"
+        },
+        "partCount": "2",
+        "contentTypeBase64": "dGV4dC9wbGFpbg==",
+        "rawBody": {
+          "encoding": "base64",
+          "byteLength": "15",
+          "sha256": "e16102de1d7001483066e0d5a4ce4db776732ae3bb2edb0a60fa584a8a45a4f2"
+        },
+        "delegate": {
+          "rawBase64": "ihEWX5t0u9cWFCES5SQRGJteP9ij5tUyTGMXSn6GbWsAAAAA",
+          "inscriptionId": "6b6d867e4a17634c32d5e6a3d83f5e9b181124e512211416d7bb749b5f16118ai0"
+        },
+        "location": {
+          "status": "assigned",
+          "outpoint": "eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26:1",
+          "offset": "9007199254740992",
+          "valueKoinu": "9007199254740993",
+          "scriptPubKeyHex": "51",
+          "address": null
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "2",
+        "inscriptionId": "0aafbc73fef38cdfef33a69cca0e46d63ae37f7b904b415fe6c2a67f2f62206ei0",
+        "inscriptionNumber": "1",
+        "txid": "3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d",
+        "txIndex": "7",
+        "from": {
+          "outpoint": "3668ca1ecdab85931844a09f09a3f809562ba0d71963e9662c3936ee978d8724:2",
+          "offset": "0"
+        },
+        "to": {
+          "status": "assigned",
+          "outpoint": "3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d:0",
+          "offset": "5000000000",
+          "valueKoinu": "7000000000",
+          "scriptPubKeyHex": "a914d6639bcf086a9bcb465453850427efd7f1a639f387",
+          "address": "AByrbNRkVQCi1SDkkyUTHtzbCuS97PZc4F"
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "3",
+        "inscriptionId": "1001eb3da96e76441b4076daf05662d58fd306f831c1ce90412e722670fa91eci0",
+        "inscriptionNumber": "179999999",
+        "txid": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8",
+        "txIndex": "0",
+        "from": {
+          "outpoint": "b46e030ef0f2b3c754c00576c1f181c5fdad5fd559d6caa873b0dae630dbc0a5:0",
+          "offset": "4999"
+        },
+        "to": {
+          "status": "assigned",
+          "outpoint": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8:0",
+          "offset": "1000000000004999",
+          "valueKoinu": "1000000000010000",
+          "scriptPubKeyHex": "76a91472732c4308afc2d80044b25fddb502e58d5aa81088ac",
+          "address": "DFaFYUp7xuGnpXXGRVdQ41j3EVH6pd9LNP"
+        }
+      },
+      {
+        "type": "transfer",
+        "eventOrdinal": "4",
+        "inscriptionId": "70a93697311ee09f8d9874ab4b57c830ad3f5bca9951b82551d7e67f04c85cfci0",
+        "inscriptionNumber": "42",
+        "txid": "616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8",
+        "txIndex": "0",
+        "from": {
+          "outpoint": "ebc908f06d6ee8e59a39c6a1bff9bc943cf167892e345c2292f5a75bdf8babfc:1",
+          "offset": "0"
+        },
+        "to": {
+          "status": "lost",
+          "outpoint": null,
+          "offset": "123",
+          "valueKoinu": null,
+          "scriptPubKeyHex": null,
+          "address": null
+        }
+      }
+    ]
+  },
+  "serialization": "{\"blockHash\":\"8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5\",\"candidateFilter\":\"dogemap-candidate-prefilter-v1\",\"creationCount\":\"3\",\"events\":[{\"completion\":{\"blockHash\":\"8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5\",\"height\":\"4771300\",\"txIndex\":\"3\",\"txid\":\"0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d\"},\"contentTypeBase64\":\"dGV4dC9wbGFpbjtjaGFyc2V0PXV0Zi04\",\"delegate\":null,\"eventOrdinal\":\"0\",\"inscriptionId\":\"0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2di0\",\"inscriptionNumber\":\"180000000\",\"location\":{\"address\":\"DLTCxiMtYgDYcGUn6291qsHXFuLC3mBbsq\",\"offset\":\"0\",\"outpoint\":\"0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d:0\",\"scriptPubKeyHex\":\"76a914a7f6bc0e09f89b7a99f4745a44daacd39ce3918e88ac\",\"status\":\"assigned\",\"valueKoinu\":\"100000\"},\"origin\":{\"blockHash\":\"8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5\",\"height\":\"4771300\",\"txid\":\"0f63b18a6a5ee1e0b1ec3506f24ff81730d3b59b6151f109348ee59e3b7a0d2d\"},\"partCount\":\"1\",\"rawBody\":{\"byteLength\":\"15\",\"encoding\":\"base64\",\"sha256\":\"cb003ce0ab411aef4a7e844b67436ace05f3cc6075872a1a3dee641175ac57ee\"},\"type\":\"creation\"},{\"completion\":{\"blockHash\":\"8e1fe3e9d8cf8f155be063d99d5ba6c59203e6c3b486a5074041980c85089ad5\",\"height\":\"4771300\",\"txIndex\":\"5\",\"txid\":\"eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26\"},\"contentTypeBase64\":\"dGV4dC9wbGFpbg==\",\"delegate\":{\"inscriptionId\":\"6b6d867e4a17634c32d5e6a3d83f5e9b181124e512211416d7bb749b5f16118ai0\",\"rawBase64\":\"ihEWX5t0u9cWFCES5SQRGJteP9ij5tUyTGMXSn6GbWsAAAAA\"},\"eventOrdinal\":\"1\",\"inscriptionId\":\"6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036i0\",\"inscriptionNumber\":\"180000002\",\"location\":{\"address\":null,\"offset\":\"9007199254740992\",\"outpoint\":\"eeaa1e64f98bd7e6539f0246755fee0739adc978fbf7abd15c38a07477db2b26:1\",\"scriptPubKeyHex\":\"51\",\"status\":\"assigned\",\"valueKoinu\":\"9007199254740993\"},\"origin\":{\"blockHash\":\"51f38112af97085e3eb9d6ba56358779b3240cb1910f0c65f855bbbb64ed2ec5\",\"height\":\"4771298\",\"txid\":\"6d9c919723b2022110a9ea3da512e7473d9460ce855cfe3f8d3533fc25f7a036\"},\"partCount\":\"2\",\"rawBody\":{\"byteLength\":\"15\",\"encoding\":\"base64\",\"sha256\":\"e16102de1d7001483066e0d5a4ce4db776732ae3bb2edb0a60fa584a8a45a4f2\"},\"type\":\"creation\"},{\"eventOrdinal\":\"2\",\"from\":{\"offset\":\"0\",\"outpoint\":\"3668ca1ecdab85931844a09f09a3f809562ba0d71963e9662c3936ee978d8724:2\"},\"inscriptionId\":\"0aafbc73fef38cdfef33a69cca0e46d63ae37f7b904b415fe6c2a67f2f62206ei0\",\"inscriptionNumber\":\"1\",\"to\":{\"address\":\"AByrbNRkVQCi1SDkkyUTHtzbCuS97PZc4F\",\"offset\":\"5000000000\",\"outpoint\":\"3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d:0\",\"scriptPubKeyHex\":\"a914d6639bcf086a9bcb465453850427efd7f1a639f387\",\"status\":\"assigned\",\"valueKoinu\":\"7000000000\"},\"txIndex\":\"7\",\"txid\":\"3cf66f0096be497c92351c5f2341744b5a503e10397a9f06fc5fa0bbcfd61c6d\",\"type\":\"transfer\"},{\"eventOrdinal\":\"3\",\"from\":{\"offset\":\"4999\",\"outpoint\":\"b46e030ef0f2b3c754c00576c1f181c5fdad5fd559d6caa873b0dae630dbc0a5:0\"},\"inscriptionId\":\"1001eb3da96e76441b4076daf05662d58fd306f831c1ce90412e722670fa91eci0\",\"inscriptionNumber\":\"179999999\",\"to\":{\"address\":\"DFaFYUp7xuGnpXXGRVdQ41j3EVH6pd9LNP\",\"offset\":\"1000000000004999\",\"outpoint\":\"616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8:0\",\"scriptPubKeyHex\":\"76a91472732c4308afc2d80044b25fddb502e58d5aa81088ac\",\"status\":\"assigned\",\"valueKoinu\":\"1000000000010000\"},\"txIndex\":\"0\",\"txid\":\"616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8\",\"type\":\"transfer\"},{\"eventOrdinal\":\"4\",\"from\":{\"offset\":\"0\",\"outpoint\":\"ebc908f06d6ee8e59a39c6a1bff9bc943cf167892e345c2292f5a75bdf8babfc:1\"},\"inscriptionId\":\"70a93697311ee09f8d9874ab4b57c830ad3f5bca9951b82551d7e67f04c85cfci0\",\"inscriptionNumber\":\"42\",\"to\":{\"address\":null,\"offset\":\"123\",\"outpoint\":null,\"scriptPubKeyHex\":null,\"status\":\"lost\",\"valueKoinu\":null},\"txIndex\":\"0\",\"txid\":\"616dd87cbcee2aa47fa71a54047359fc2a26d5f7182433bf470c4357b7cd37d8\",\"type\":\"transfer\"}],\"feedVersion\":\"dogemap-feed-v1\",\"genesisHash\":\"1a91e3dace36e2be3bf030a65679fe821aa1d6ef92e7c9902eb318182c355691\",\"height\":\"4771300\",\"network\":\"mainnet\",\"orderProfile\":\"ord-dogecoin-inscription-number-v1\",\"parentHash\":\"fe45b91575f567c0a33c4b344b45ff63e284dfe2f451144bc05a8a7d5c405b44\",\"parserProfile\":\"doginals-trac-1.0.2-compat-v1\",\"scope\":{\"creations\":\"dogemap-candidate-prefilter-v1\",\"transfers\":\"complete\"}}",
+  "sha256": "774dbf52eb5b6bdd0bb26f4fe1174acf841be0e6b68d3efa01fb80a746aa6ff5"
+}
