@@ -139,7 +139,10 @@ impl<'index> Updater<'_> {
           1000
         };
 
-      if uncommitted >= commit_interval {
+      // Also commit at every savepoint height near the node tip: savepoints
+      // are only taken on a commit at such a height, and without them a
+      // reorg right after catching up has nothing to roll back to.
+      if uncommitted >= commit_interval || Reorg::savepoint_due(self.height, starting_height) {
         self.commit(wtx, value_cache)?;
         value_cache = HashMap::new();
         uncommitted = 0;

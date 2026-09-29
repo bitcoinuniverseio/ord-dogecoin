@@ -24,6 +24,15 @@ const DOGEMAP_FEED_JOURNAL: TableDefinition<(u32, u32), &[u8]> =
 
 const REGTEST_GENESIS: &str = "3d2160a3b5dc4a9d62e7e66a295f70313ac808440ef7400d6c0772171ce973a5";
 
+/// Dogecoin Core 1.14.9 regtest P2PKH address (version byte 111), encoded
+/// independently of the rust-dogecoin fork, which uses the testnet byte.
+fn regtest_p2pkh_address(script: &Script) -> String {
+  assert!(script.is_p2pkh());
+  let mut payload = vec![111u8];
+  payload.extend_from_slice(&script.as_bytes()[3..23]);
+  bitcoin::util::base58::check_encode_slice(&payload)
+}
+
 fn b64(bytes: &[u8]) -> String {
   base64::encode(bytes)
 }
@@ -314,9 +323,7 @@ fn every_creation_is_counted_and_only_candidates_are_emitted() {
     .collect::<Vec<u64>>();
   assert!(numbers[0] < numbers[1]);
 
-  let owner_address = bitcoin::Address::from_script(&owner, bitcoin::Network::Regtest)
-    .unwrap()
-    .to_string();
+  let owner_address = regtest_p2pkh_address(&owner);
   assert_eq!(
     events[0],
     json!({
@@ -508,9 +515,7 @@ fn transfers_are_journaled_with_offsets_scripts_fees_and_lost_sats() {
         "offset": DEFAULT_SUBSIDY.to_string(),
         "valueKoinu": "7000000000",
         "scriptPubKeyHex": hex::encode(holder.as_bytes()),
-        "address": bitcoin::Address::from_script(&holder, bitcoin::Network::Regtest)
-          .unwrap()
-          .to_string(),
+        "address": regtest_p2pkh_address(&holder),
       },
     })
   );
@@ -954,4 +959,47 @@ fn a_reorg_reverts_the_journal_and_advances_the_epoch() {
   assert!(events.is_empty());
   let (_, locations) = server.json(&format!("/api/v1/dogemap-feed/locations?ids={candidate}i0"));
   assert_eq!(locations["locations"][0]["found"], false);
+}
+
+#[test]
+fn a_reorg_right_after_catching_up_rolls_back_to_a_savepoint() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  // The first update ends at block count 13, which is not a savepoint height;
+  // the savepoint at block count 10 must still exist.
+  rpc.mine_blocks(12);
+  let server = chain.serve();
+  server.wait_for_checkpoint(12);
+
+  rpc.invalidate_tip();
+  rpc.mine_blocks(2);
+  server.wait_until(|| server.json("/api/v1/dogemap-feed/capabilities").1["reorgEpoch"] == "1");
+  let after = server.wait_for_checkpoint(13);
+  assert_eq!(after["indexedCheckpoint"]["blockHash"], chain.block_hash(13));
+  assert_eq!(after["ready"], true, "{after}");
+}
+
+#[test]
+fn a_reorg_below_the_oldest_savepoint_is_reported_not_a_crash() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  // Savepoints at block counts 10 and 20; the fork below replaces heights 6..
+  rpc.mine_blocks(25);
+  let server = chain.serve();
+  server.wait_for_checkpoint(25);
+
+  for _ in 0..20 {
+    rpc.invalidate_tip();
+  }
+  rpc.mine_blocks(21);
+  server.wait_until(|| {
+    server.json("/api/v1/dogemap-feed/capabilities").1["unavailableReason"] == "recovering"
+  });
+  let capabilities = server.capabilities();
+  assert_eq!(capabilities["ready"], false);
+  assert_eq!(capabilities["reorgEpoch"], "0");
+  // The old branch is not served as if it were current.
+  assert_eq!(capabilities["indexedCheckpoint"]["height"], "25");
+  let (status, value) = server.block(25, &chain.block_hash(25), "");
+  assert_error(status, &value, 409, "snapshot_replaced");
 }

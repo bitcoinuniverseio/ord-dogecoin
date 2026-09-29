@@ -827,6 +827,30 @@ fn provider_commit_known() -> bool {
   wire::is_lower_hex(provider_commit(), 40)
 }
 
+/// Display address of a location script under the contract's network table.
+/// The rust-dogecoin fork encodes Regtest with the testnet P2PKH version (113),
+/// while Dogecoin Core 1.14.9 regtest uses 111 (P2SH 196), so regtest
+/// addresses are encoded here. Mainnet and testnet keep the library encoding.
+fn dogemap_feed_address(chain: Chain, script: &Script) -> Option<String> {
+  if chain != Chain::Regtest {
+    return chain
+      .address_from_script(script)
+      .ok()
+      .map(|address| address.to_string());
+  }
+  let bytes = script.as_bytes();
+  let (version, hash) = if script.is_p2pkh() {
+    (111u8, &bytes[3..23])
+  } else if script.is_p2sh() {
+    (196u8, &bytes[2..22])
+  } else {
+    return None;
+  };
+  let mut payload = vec![version];
+  payload.extend_from_slice(hash);
+  Some(bitcoin::util::base58::check_encode_slice(&payload))
+}
+
 impl Index {
   /// Create the feed's generation id at server start, so it exists before the
   /// first new block. One tiny write transaction when absent, none after.
@@ -1125,10 +1149,7 @@ impl Index {
     value: u64,
     script_pubkey: &[u8],
   ) -> Value {
-    let address = chain
-      .address_from_script(&Script::from(script_pubkey.to_vec()))
-      .ok()
-      .map(|address| address.to_string());
+    let address = dogemap_feed_address(chain, &Script::from(script_pubkey.to_vec()));
     json!({
       "status": "assigned",
       "outpoint": outpoint.to_string(),
@@ -1782,5 +1803,32 @@ impl Index {
     );
     map.insert("locations".into(), Value::Array(locations));
     Ok(Value::Object(map))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  // Vectors from Dogecoin Core 1.14.9 `validateaddress` on regtest (campaign
+  // 2026-09-29) and the testnet encoding of the same key hash.
+  #[test]
+  fn regtest_addresses_use_the_regtest_version_bytes() {
+    let p2pkh = Script::from(hex::decode("76a9143fbf0c955774efb1c3672c7d21bfedaff4d8f4f288ac").unwrap());
+    assert_eq!(
+      dogemap_feed_address(Chain::Regtest, &p2pkh).as_deref(),
+      Some("mmL1jU46wt7NX4AxsebvZBh4siURhgSgyk")
+    );
+    assert_eq!(
+      dogemap_feed_address(Chain::Testnet, &p2pkh).as_deref(),
+      Some("na1DhgegNF389vT8vVGZXSEe8izK9XfdmV")
+    );
+    let p2sh = Script::from(hex::decode("a9143fbf0c955774efb1c3672c7d21bfedaff4d8f4f287").unwrap());
+    assert_eq!(
+      dogemap_feed_address(Chain::Regtest, &p2sh),
+      dogemap_feed_address(Chain::Testnet, &p2sh)
+    );
+    assert!(dogemap_feed_address(Chain::Regtest, &p2sh).unwrap().starts_with('2'));
+    assert_eq!(dogemap_feed_address(Chain::Regtest, &Script::new()), None);
   }
 }

@@ -662,7 +662,14 @@ impl Index {
 
             match err.downcast_ref() {
               Some(&ReorgError::Recoverable { height, depth }) => {
-                Reorg::handle_reorg(self, height, depth)?;
+                if let Err(error) = Reorg::handle_reorg(self, height, depth) {
+                  if let Some(ReorgError::Unrecoverable) = error.downcast_ref() {
+                    self
+                      .unrecoverably_reorged
+                      .store(true, atomic::Ordering::Relaxed);
+                  }
+                  return Err(error);
+                }
 
                 updater = Updater::new(self)?;
               }

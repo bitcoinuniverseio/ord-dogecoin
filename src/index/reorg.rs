@@ -83,9 +83,32 @@ impl Reorg {
       .map(|value| value.value())
       .unwrap_or(0);
 
-    let oldest_savepoint = wtx.get_persistent_savepoint(wtx.list_persistent_savepoints()?.min().unwrap())?;
+    // No savepoint, or one taken above the fork, cannot roll back this reorg:
+    // report it as unrecoverable (aborting `wtx` discards the restore) instead
+    // of panicking the index thread or restoring the same savepoint forever.
+    let Some(oldest) = wtx.list_persistent_savepoints()?.min() else {
+      log::warn!("no savepoint to roll back a reorg of depth {depth} at height {height}");
+      wtx.abort()?;
+      return Err(anyhow!(ReorgError::Unrecoverable));
+    };
 
-    wtx.restore_savepoint(&oldest_savepoint)?;
+    wtx.restore_savepoint(&wtx.get_persistent_savepoint(oldest)?)?;
+
+    let restored_block_count = wtx
+      .open_table(HEIGHT_TO_BLOCK_HASH)?
+      .range(0..)?
+      .next_back()
+      .transpose()?
+      .map(|(height, _hash)| height.value() + 1)
+      .unwrap_or(0);
+    let first_replaced_height = height.saturating_sub(depth) + 1;
+    if restored_block_count > first_replaced_height {
+      log::warn!(
+        "oldest savepoint (block count {restored_block_count}) is above the fork of a reorg of depth {depth} at height {height}"
+      );
+      wtx.abort()?;
+      return Err(anyhow!(ReorgError::Unrecoverable));
+    }
 
     wtx
       .open_table(STATISTIC_TO_COUNT)?
@@ -101,6 +124,16 @@ impl Reorg {
     );
 
     Ok(())
+  }
+
+  /// Whether the updater must commit after indexing up to block count
+  /// `height`, so that `update_savepoints` can take a savepoint there.
+  /// `starting_height` is the node's block count plus one when the update
+  /// began.
+  pub(crate) fn savepoint_due(height: u32, starting_height: u32) -> bool {
+    height >= SAVEPOINT_INTERVAL
+      && height % SAVEPOINT_INTERVAL == 0
+      && starting_height.saturating_sub(height) <= CHAIN_TIP_DISTANCE
   }
 
   pub(crate) fn update_savepoints(index: &Index, height: u32) -> Result {
