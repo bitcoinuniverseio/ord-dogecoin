@@ -16,6 +16,13 @@ pub fn checked_inventory_limit(limit: Option<usize>) -> Result<usize, &'static s
   Ok(limit)
 }
 
+/// A funding inventory is complete only while the index is within three blocks
+/// of the node tip; an index still catching up cannot know every output an
+/// address holds. `block_count` is the index block count (tip height + 1).
+pub fn funding_inventory_complete(node_tip: Option<u64>, block_count: u32) -> bool {
+  node_tip.is_some_and(|tip| tip.saturating_sub(u64::from(block_count.saturating_sub(1))) <= 3)
+}
+
 pub fn checked_funding_limit(limit: Option<usize>) -> Result<usize, &'static str> {
   let limit = limit.unwrap_or(FUNDING_LIMIT_DEFAULT);
   if !(1..=FUNDING_LIMIT_MAXIMUM).contains(&limit) {
