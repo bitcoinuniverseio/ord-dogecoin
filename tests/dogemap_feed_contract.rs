@@ -1013,3 +1013,47 @@ fn a_reorg_below_the_oldest_savepoint_is_reported_not_a_crash() {
   let (status, value) = server.block(25, &chain.block_hash(25), "");
   assert_error(status, &value, 409, "snapshot_replaced");
 }
+
+// Fault campaign 2026-09-29, S6: after two rollbacks to the same savepoint and
+// further savepoint rotation, restoring the oldest savepoint for a deeper
+// reorg panicked inside redb (`restore_savepoint`, is_allocated assertion).
+#[test]
+fn repeated_rollbacks_keep_later_savepoints_restorable() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  rpc.mine_blocks(25);
+  let mut server = chain.serve();
+  server.wait_for_checkpoint(25);
+
+  let epoch = |server: &dogemap_support::Server| {
+    server.json("/api/v1/dogemap-feed/capabilities").1["reorgEpoch"]
+      .as_str()
+      .map(str::to_owned)
+  };
+  for (round, expected) in [(0, "1"), (1, "2")] {
+    for _ in 0..2 {
+      rpc.invalidate_tip();
+    }
+    rpc.mine_blocks(3);
+    server.wait_until(|| epoch(&server).as_deref() == Some(expected));
+    server.wait_for_checkpoint(26 + round);
+  }
+
+  // Rotate savepoints with further blocks, across a restart.
+  rpc.mine_blocks(60);
+  server.wait_for_checkpoint(87);
+  drop(server);
+  server = chain.serve();
+  for height in 88..=95 {
+    rpc.mine_blocks(1);
+    server.wait_for_checkpoint(height);
+  }
+
+  for _ in 0..9 {
+    rpc.invalidate_tip();
+  }
+  rpc.mine_blocks(10);
+  server.wait_until(|| epoch(&server).as_deref() == Some("3"));
+  let after = server.wait_for_checkpoint(96);
+  assert_eq!(after["indexedCheckpoint"]["blockHash"], chain.block_hash(96));
+}

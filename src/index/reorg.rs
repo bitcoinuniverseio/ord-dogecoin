@@ -70,18 +70,25 @@ impl Reorg {
     // table opened in a write transaction when the handle is dropped, and
     // restore_savepoint does not discard staged roots, so a table opened in
     // `wtx` before the restore would keep its pre-restore contents.
-    let feed_generation = dogemap_feed::preserve_meta(&index.database.begin_read()?)?;
-
-    let mut wtx = index.begin_write()?;
+    let rtx = index.database.begin_read()?;
+    let feed_generation = dogemap_feed::preserve_meta(&rtx)?;
 
     // Read the rollback counter before the restore replaces every table with
     // the savepoint's contents, so the counter keeps growing across rollbacks
-    // instead of being reset to whatever the savepoint held.
-    let reorgs_before = wtx
+    // instead of being reset to whatever the savepoint held. It must come from
+    // the read transaction too: opening STATISTIC_TO_COUNT in `wtx` before the
+    // restore staged its pre-restore root, the commit kept pointing at pages
+    // the restored allocator treats as free, and later writes reused them
+    // (fault campaign 2026-09-29, S6: "STATISTIC_TO_COUNT is of type
+    // Table<[u8;44], [u8;36]>" and a panic inside a later restore_savepoint).
+    let reorgs_before = rtx
       .open_table(STATISTIC_TO_COUNT)?
       .get(&Statistic::Reorgs.key())?
       .map(|value| value.value())
       .unwrap_or(0);
+    drop(rtx);
+
+    let mut wtx = index.begin_write()?;
 
     // No savepoint, or one taken above the fork, cannot roll back this reorg:
     // report it as unrecoverable (aborting `wtx` discards the restore) instead
