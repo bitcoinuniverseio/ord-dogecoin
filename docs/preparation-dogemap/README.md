@@ -1,6 +1,13 @@
 # Dogemap dependency preparation: shared Doginals authority
 
-Status: ANNOTATED. Implementation, functional acceptance and deployment remain NOT TESTED.
+Status: IMPLEMENTED on branch feat/dogemap-feed-20260929 (feed dogemap-feed-v1, P-02 journal, P-03 parser qualification). The text below is the preparation record and its FAIL/NOT TESTED rows describe the baseline before that work; coverage.json is kept as that baseline.
+
+## Implementation record (2026-09-29)
+
+- P-03: the compat parser (`doginals-trac-1.0.2-compat-v1`) is kept byte for byte, including the PUSHDATA2/PUSHDATA4 length quirk (P-F03), vin0-only reading and txid-keyed continuation (P-F04). Bounds hardening changes no outcome on 64-bit builds (an empty scriptSig list returns none instead of panicking; the PUSHDATA4 end offset is checked). A Core-correct decoder serves only `ord dogemap-pushdata-audit`. Vectors: tests/dogemap_parser_compatibility.rs.
+- P-02: DOGEMAP_FEED_META (database id, creation coverage, journal range) and DOGEMAP_FEED_JOURNAL (per-block location records for prefilter-passing creations and every transfer) are written in the block's write transaction. Creations are derived from the inscription tables for any height instead of being stored. Transfer history before the journal start is reported `not-journaled`; no historical replay is performed.
+- P-01: the four routes of contract section 2 read identity, checkpoint and data from one redb read transaction; node RPC facts (completion position for unjournaled blocks, first reveal block of multipart inscriptions, scripts for /locations) are fetched afterwards and re-checked against the index. Tests: tests/dogemap_feed_contract.rs, golden vector docs/contract/eventsHash-golden-v1.json.
+- Every IMPLEMENTATION-HANDOFF [P-0x] marker was replaced by a rationale comment (annotation-index.json lists them as IMPLEMENTED).
 
 This directory is the maintained implementation handoff for the Doginals provider dependency of dogemap-indexer and dogemap-renderer. It prepares the existing Universe ord-dogecoin authority to expose complete, reproducible Doginals creation and ownership data. It does not define Dogemap claim semantics.
 
