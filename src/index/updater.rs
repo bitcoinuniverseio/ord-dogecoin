@@ -274,7 +274,10 @@ impl<'index> Updater<'_> {
       let Some(Ok(header)) = response.map(|response| response.result::<String>()) else {
         return Ok(None);
       };
-      let header: BlockHeader = consensus::encode::deserialize(&hex::decode(header)?)?;
+      // Merge-mined headers are followed by their AuxPoW; like the RPC
+      // client's own header decoding, read the 80-byte header and ignore it.
+      let (header, _) =
+        consensus::encode::deserialize_partial::<BlockHeader>(&hex::decode(header)?)?;
       ensure!(
         header.block_hash().to_string() == *hash,
         "node returned header {} for block {hash}",
