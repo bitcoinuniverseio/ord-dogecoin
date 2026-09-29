@@ -17,6 +17,9 @@ mod drc20_updater;
 mod dune_updater;
 mod inscription_updater;
 
+/// Headers fetched per batched RPC call below the first inscription height.
+const HEADER_BATCH: u32 = 1000;
+
 pub(crate) struct BlockData {
   pub(crate) header: BlockHeader,
   pub(crate) txdata: Vec<(Transaction, Txid)>,
@@ -186,6 +189,34 @@ impl<'index> Updater<'_> {
         }
       }
 
+      // Below the first inscription height only headers are indexed. Fetch
+      // them in batches: two RPC round trips per block made a fresh index of
+      // a long chain (Dogecoin testnet has tens of millions of blocks) take a
+      // day. Anything the batch cannot answer, such as heights past the node
+      // tip, falls through to the one-block path with its retries.
+      if !index_sats && height < first_inscription_height {
+        let end = first_inscription_height
+          .min(height.saturating_add(HEADER_BATCH))
+          .min(height_limit.unwrap_or(u32::MAX));
+        match Self::get_headers_batch(&client, height, end) {
+          Ok(Some(headers)) => {
+            for header in headers {
+              if let Err(err) = tx.send(BlockData {
+                header,
+                txdata: Vec::new(),
+              }) {
+                log::info!("Block receiver disconnected: {err}");
+                return;
+              }
+              height += 1;
+            }
+            continue;
+          }
+          Ok(None) => {}
+          Err(err) => log::warn!("batched header fetch from {height} failed: {err}"),
+        }
+      }
+
       match Self::get_block_with_retries(&client, height, index_sats, first_inscription_height) {
         Ok(Some(block)) => {
           if let Err(err) = tx.send(block.into()) {
@@ -203,6 +234,55 @@ impl<'index> Updater<'_> {
     });
 
     Ok(rx)
+  }
+
+  /// Headers of `start..end` in two batched calls, or `None` when the node
+  /// cannot answer every height (the batch then yields to the one-block path).
+  fn get_headers_batch(client: &Client, start: u32, end: u32) -> Result<Option<Vec<BlockHeader>>> {
+    use serde_json::value::{to_raw_value, RawValue};
+
+    if start >= end {
+      return Ok(None);
+    }
+    let rpc = client.get_jsonrpc_client();
+
+    let params = (start..end)
+      .map(|height| Ok(vec![to_raw_value(&height)?]))
+      .collect::<Result<Vec<Vec<Box<RawValue>>>>>()?;
+    let requests = params
+      .iter()
+      .map(|params| rpc.build_request("getblockhash", params))
+      .collect::<Vec<_>>();
+    let mut hashes = Vec::with_capacity(requests.len());
+    for response in rpc.send_batch(&requests)? {
+      let Some(Ok(hash)) = response.map(|response| response.result::<String>()) else {
+        return Ok(None);
+      };
+      hashes.push(hash);
+    }
+
+    let params = hashes
+      .iter()
+      .map(|hash| Ok(vec![to_raw_value(hash)?, to_raw_value(&false)?]))
+      .collect::<Result<Vec<Vec<Box<RawValue>>>>>()?;
+    let requests = params
+      .iter()
+      .map(|params| rpc.build_request("getblockheader", params))
+      .collect::<Vec<_>>();
+    let mut headers = Vec::with_capacity(requests.len());
+    for (response, hash) in rpc.send_batch(&requests)?.into_iter().zip(&hashes) {
+      let Some(Ok(header)) = response.map(|response| response.result::<String>()) else {
+        return Ok(None);
+      };
+      let header: BlockHeader = consensus::encode::deserialize(&hex::decode(header)?)?;
+      ensure!(
+        header.block_hash().to_string() == *hash,
+        "node returned header {} for block {hash}",
+        header.block_hash()
+      );
+      headers.push(header);
+    }
+    Ok(Some(headers))
   }
 
   fn get_block_with_retries(
