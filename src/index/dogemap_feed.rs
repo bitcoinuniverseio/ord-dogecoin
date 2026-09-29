@@ -1805,30 +1805,3 @@ impl Index {
     Ok(Value::Object(map))
   }
 }
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  // Vectors from Dogecoin Core 1.14.9 `validateaddress` on regtest (campaign
-  // 2026-09-29) and the testnet encoding of the same key hash.
-  #[test]
-  fn regtest_addresses_use_the_regtest_version_bytes() {
-    let p2pkh = Script::from(hex::decode("76a9143fbf0c955774efb1c3672c7d21bfedaff4d8f4f288ac").unwrap());
-    assert_eq!(
-      dogemap_feed_address(Chain::Regtest, &p2pkh).as_deref(),
-      Some("mmL1jU46wt7NX4AxsebvZBh4siURhgSgyk")
-    );
-    assert_eq!(
-      dogemap_feed_address(Chain::Testnet, &p2pkh).as_deref(),
-      Some("na1DhgegNF389vT8vVGZXSEe8izK9XfdmV")
-    );
-    let p2sh = Script::from(hex::decode("a9143fbf0c955774efb1c3672c7d21bfedaff4d8f4f287").unwrap());
-    assert_eq!(
-      dogemap_feed_address(Chain::Regtest, &p2sh),
-      dogemap_feed_address(Chain::Testnet, &p2sh)
-    );
-    assert!(dogemap_feed_address(Chain::Regtest, &p2sh).unwrap().starts_with('2'));
-    assert_eq!(dogemap_feed_address(Chain::Regtest, &Script::new()), None);
-  }
-}

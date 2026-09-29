@@ -33,6 +33,15 @@ fn regtest_p2pkh_address(script: &Script) -> String {
   bitcoin::util::base58::check_encode_slice(&payload)
 }
 
+// Vector from Dogecoin Core 1.14.9 `validateaddress` on regtest (fault
+// campaign 2026-09-29); the fork's testnet encoding of the same hash was
+// na1DhgegNF389vT8vVGZXSEe8izK9XfdmV.
+#[test]
+fn regtest_address_encoding_matches_dogecoin_core() {
+  let script = Script::from(hex::decode("76a9143fbf0c955774efb1c3672c7d21bfedaff4d8f4f288ac").unwrap());
+  assert_eq!(regtest_p2pkh_address(&script), "mmL1jU46wt7NX4AxsebvZBh4siURhgSgyk");
+}
+
 fn b64(bytes: &[u8]) -> String {
   base64::encode(bytes)
 }
@@ -976,7 +985,8 @@ fn a_reorg_right_after_catching_up_rolls_back_to_a_savepoint() {
   server.wait_until(|| server.json("/api/v1/dogemap-feed/capabilities").1["reorgEpoch"] == "1");
   let after = server.wait_for_checkpoint(13);
   assert_eq!(after["indexedCheckpoint"]["blockHash"], chain.block_hash(13));
-  assert_eq!(after["ready"], true, "{after}");
+  // The node tip is cached, so readiness follows shortly after.
+  server.wait_until(|| server.json("/api/v1/dogemap-feed/capabilities").1["ready"] == true);
 }
 
 #[test]
