@@ -50,6 +50,27 @@ pub(crate) fn resolved_content_metadata(
   )
 }
 
+// IMPLEMENTATION-HANDOFF [P-01] FEED-WIRE; P-C01..04, P-F01/P-F05.
+// Current inventory models are live snapshots with no historical event set;
+// OutputDetail uses ASM, and resolved_content_metadata may follow delegates.
+// 1. Add separate DogemapFeed DTOs here (no break to existing authority types):
+//    capabilities, checkpoint, block page, creation/transfer, location, rawBody,
+//    and typed errors. Exact fields/hash projection: docs/preparation-dogemap/
+//    feed-contract.md. Keep chain="dogecoin"; network/genesisHash are separate.
+// 2. Serialize every chain integer as a decimal string; retain intrinsic body
+//    bytes/type bytes, body digest, origin and completion coordinates, and
+//    from/to scriptPubKeyHex+outpoint+offset+valueKoinu. Address is nullable;
+//    it is not ownership authority. Lost and unresolved are distinct states.
+// 3. Bind databaseId, parserProfile/orderProfile, schema, blockHash and epoch;
+//    digest ordered semantic descriptors via RFC 8785, excluding page/transport
+//    fields. Require P-02 retained events before P-01 can advertise coverage.
+// 4. Add PROPOSED tests/dogemap_feed_contract.rs and register target
+//    dogemap-feed-contract in Cargo.toml during implementation. Command:
+//    cargo +1.96.0 test --locked --test dogemap-feed-contract (not run/new).
+//    Assert exact >2^53 values, null address, intrinsic/delegate separation,
+//    pagination digest parity with dogemap-indexer I-02, and zero-event truth.
+//    Regress authority-api-contract + inscription-json; additive rollback must
+//    preserve old JSON contracts. Sources P-S01/P-S04/P-S05; see work-packages.md.
 #[derive(Debug, PartialEq, Serialize)]
 pub struct InventoryLocation {
   pub txid: String,

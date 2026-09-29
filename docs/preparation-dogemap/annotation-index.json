@@ -1,0 +1,316 @@
+[
+  {
+    "id": "P-01",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/authority_api.rs",
+    "symbol": "InventoryLocation / PROPOSED DogemapFeed wire types",
+    "coverageIds": [
+      "P-CAP-01",
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-CREATE-01",
+      "P-TRANSFER-01",
+      "P-BODY-01",
+      "P-PAGINATION-01"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-02"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C01",
+      "P-C02",
+      "P-C03",
+      "P-C04"
+    ]
+  },
+  {
+    "id": "P-01",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/subcommand/server.rs",
+    "symbol": "Server::inscription_inventory / PROPOSED DogemapFeed handlers",
+    "coverageIds": [
+      "P-CAP-01",
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-CREATE-01",
+      "P-BODY-01",
+      "P-PAGINATION-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-02"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C01",
+      "P-C02",
+      "P-C03",
+      "P-C05",
+      "P-C07"
+    ]
+  },
+  {
+    "id": "P-01",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/subcommand/server.rs",
+    "symbol": "Server::index_capabilities",
+    "coverageIds": [
+      "P-CAP-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01"
+    ],
+    "defectIds": [
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-02"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C01",
+      "P-C05"
+    ]
+  },
+  {
+    "id": "P-02",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index.rs",
+    "symbol": "SCHEMA_VERSION / table declarations and Index::open",
+    "coverageIds": [
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-CREATE-01",
+      "P-TRANSFER-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01",
+      "P-REPLAY-01"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F06"
+    ],
+    "dependsOn": [
+      "P-03"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C02",
+      "P-C04",
+      "P-C05"
+    ]
+  },
+  {
+    "id": "P-01",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index.rs",
+    "symbol": "Index::block_count / PROPOSED dogemap_feed_snapshot",
+    "coverageIds": [
+      "P-CAP-01",
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-PAGINATION-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-02"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C01",
+      "P-C02",
+      "P-C05"
+    ]
+  },
+  {
+    "id": "P-01",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index/rtx.rs",
+    "symbol": "Rtx / PROPOSED dogemap_feed snapshot readers",
+    "coverageIds": [
+      "P-CAP-01",
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-PAGINATION-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-02"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C01",
+      "P-C02",
+      "P-C05"
+    ]
+  },
+  {
+    "id": "P-02",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index/updater.rs",
+    "symbol": "Updater::index_block / HEIGHT_TO_BLOCK_HASH write",
+    "coverageIds": [
+      "P-PAGE-01",
+      "P-ZERO-01",
+      "P-CREATE-01",
+      "P-TRANSFER-01",
+      "P-BODY-01",
+      "P-RECOVERY-01",
+      "P-REPLAY-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F06"
+    ],
+    "dependsOn": [
+      "P-03"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C02",
+      "P-C03",
+      "P-C04",
+      "P-C05",
+      "P-C07"
+    ]
+  },
+  {
+    "id": "P-02",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index/updater/inscription_updater.rs",
+    "symbol": "InscriptionUpdater::update_inscription_location",
+    "coverageIds": [
+      "P-PAGE-01",
+      "P-CREATE-01",
+      "P-TRANSFER-01",
+      "P-BODY-01"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F06"
+    ],
+    "dependsOn": [
+      "P-03"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C02",
+      "P-C03",
+      "P-C04"
+    ]
+  },
+  {
+    "id": "P-02",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index/reorg.rs",
+    "symbol": "Reorg::handle_reorg",
+    "coverageIds": [
+      "P-PAGINATION-01",
+      "P-EPOCH-01",
+      "P-RECOVERY-01",
+      "P-REPLAY-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F05"
+    ],
+    "dependsOn": [
+      "P-03"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C05",
+      "P-C07"
+    ]
+  },
+  {
+    "id": "P-03",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/inscription.rs",
+    "symbol": "Inscription::from_transactions",
+    "coverageIds": [
+      "P-PROFILE-01",
+      "P-ORDER-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F04"
+    ],
+    "dependsOn": [
+      "I-01"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C06",
+      "P-C07"
+    ]
+  },
+  {
+    "id": "P-03",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/inscription.rs",
+    "symbol": "InscriptionParser::decode_push_datas",
+    "coverageIds": [
+      "P-PUSH-01",
+      "P-PROFILE-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F03"
+    ],
+    "dependsOn": [
+      "I-01"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C06",
+      "P-C07"
+    ]
+  },
+  {
+    "id": "P-03",
+    "repository": "bitcoinuniverseio/ord-dogecoin",
+    "file": "src/index/updater/inscription_updater.rs",
+    "symbol": "InscriptionUpdater::index_transaction_inscriptions continuation lookup",
+    "coverageIds": [
+      "P-CREATE-01",
+      "P-PROFILE-01",
+      "P-ORDER-01",
+      "P-RECOVERY-01",
+      "P-LEGACY-01"
+    ],
+    "defectIds": [
+      "P-F04"
+    ],
+    "dependsOn": [
+      "I-01"
+    ],
+    "status": "ANNOTATED",
+    "requirementIds": [
+      "P-C06",
+      "P-C07"
+    ]
+  }
+]

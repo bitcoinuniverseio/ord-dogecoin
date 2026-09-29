@@ -1,0 +1,1161 @@
+[
+  {
+    "id": "P-CAP-01",
+    "operation": "Atomic feed chain/profile/checkpoint capabilities",
+    "workPackages": [
+      "P-01"
+    ],
+    "requirements": [
+      "P-C01"
+    ],
+    "entryPoint": "GET /api/v1/dogemap-feed/capabilities (PROPOSED)",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: register dogemap-feed-contract and launch the production ord binary with an isolated database using the existing integration harness structure.",
+      "Request feed capabilities before any complete manifest; assert indexedCheckpoint and coverageFromHeight are null and readiness is unavailable.",
+      "Persist a covered block, then read capabilities while a deterministic writer commits another block; compare every returned watermark/hash/epoch to one redb read root.",
+      "Leave ordinary index tip ahead of feed coverage and assert the response names both independently without advancing the feed watermark.",
+      "Pass the response through I-02's identity checks with expected and mismatched network/genesis/profile/database values; reject mismatches without storing a consumer checkpoint.",
+      "Capture HTTP JSON, known database snapshot identity and build/profile provenance; do not label this row PASS until the proposed assertions and the appropriate Testnet identity check run."
+    ],
+    "assertions": [
+      "Observe one identity+watermark/hash/epoch under concurrent commits; reject wrong network/genesis."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/subcommand/server.rs::index_capabilities; src/index/rtx.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Provider operator and read-only dogemap-indexer adapter",
+    "wallet": "No wallet for capability reads; an isolated Testnet authority supplies the public-network identity gate.",
+    "variant": "Before first block; retained feed behind index tip; concurrent commit; wrong network/genesis; recovery.",
+    "transport": "HTTP JSON GET /api/v1/dogemap-feed/capabilities over the existing owned service boundary.",
+    "services": [
+      "Universe ord-dogecoin HTTP service",
+      "Shared redb database",
+      "Universe Dogecoin Core for independently checked genesis/tip",
+      "dogemap-indexer I-02"
+    ],
+    "stateDependencies": [
+      "HEIGHT_TO_BLOCK_HASH",
+      "STATISTIC_TO_COUNT / Statistic::Reorgs",
+      "PROPOSED feed identity, coverage and watermark tables",
+      "Database generation and qualified parser/order profiles"
+    ],
+    "inputs": [
+      "An empty feed database",
+      "Two committed snapshots with distinct height/hash/epoch",
+      "A profile-qualified Testnet database with known genesis",
+      "A deliberate consumer network/genesis mismatch"
+    ],
+    "actualResult": "Source audit confirmed separate read transactions for current count/hash and missing feed profile/generation/coverage fields. Proposed capability endpoint and tests have not been implemented or executed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_capabilities_bind_one_snapshot -- --exact",
+      "cargo +1.96.0 test --locked --test authority-api-contract"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/authority_api_contract.rs"
+    ],
+    "proposedTestNames": [
+      "feed_capabilities_bind_one_snapshot"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-PAGE-01",
+    "operation": "Complete immutable historical block events",
+    "workPackages": [
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C02"
+    ],
+    "entryPoint": "GET /api/v1/dogemap-feed/blocks/:height (PROPOSED)",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: build a deterministic local block fixture containing multiple creation and transfer events with independently specified expected descriptors.",
+      "Index the block through the production binary and inspect that events, manifest and watermark commit with the same HEIGHT_TO_BLOCK_HASH update.",
+      "Request the same historical height/hash using page sizes 1, 2 and the maximum, then repeat each request to exercise idempotent reads.",
+      "Assemble all pages in eventOrdinal order and verify parent/hash/profile identity, dense ordinals, totalEvents and the full RFC8785 digest.",
+      "Inject a conflicting manifest or missing event in an isolated fault fixture and require integrity_failure with no complete response.",
+      "Run I-02/I-05 against the valid and invalid responses; verify a consumer block commit occurs only for the fully verified manifest, and record the manifest/readback evidence."
+    ],
+    "assertions": [
+      "A requested height/hash reproduces one dense event set with exact total and digest."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/updater.rs::index_block; src/subcommand/server.rs::inscription_inventory",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F02"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Historical feed reader and dogemap-indexer block-ingestion worker",
+    "wallet": "No wallet for historical reads; use isolated local fixtures and the shared Testnet provider for acceptance.",
+    "variant": "One block; multi-page block; duplicate retry; conflicting manifest; non-tip historical block.",
+    "transport": "HTTP JSON GET /api/v1/dogemap-feed/blocks/:height plus redb manifest/event reads.",
+    "services": [
+      "Universe ord-dogecoin writer and HTTP service",
+      "Shared redb database",
+      "dogemap-indexer I-02/I-05"
+    ],
+    "stateDependencies": [
+      "PROPOSED ordered event and block-manifest tables",
+      "Intrinsic body descriptors",
+      "Feed coverage/watermark",
+      "Qualified profile, databaseId and source reorgEpoch"
+    ],
+    "inputs": [
+      "Known block height/hash/parent",
+      "A block with multiple completed inscriptions and transfers",
+      "Page limits of1,2 and the supported maximum",
+      "An intentionally conflicting event digest at the same block identity"
+    ],
+    "actualResult": "The inspected schema/updater has no retained complete Doginals block manifest or full event journal; existing inventory is newest-first across all inscription numbers. No proposed block-feed execution occurred.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_block_manifest_is_complete_and_repeatable -- --exact"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)"
+    ],
+    "proposedTestNames": [
+      "feed_block_manifest_is_complete_and_repeatable"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-ZERO-01",
+    "operation": "Proved zero-event and negative-decision completeness",
+    "workPackages": [
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C02"
+    ],
+    "entryPoint": "Terminal block page / consumer I-05",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: index a zero-inscription fixture through the production provider and verify it retains an explicit manifest with totalEvents 0 and the correct empty-event digest.",
+      "Read that exact covered height/hash; require one terminal page with events empty, nextCursor null and complete true.",
+      "Request a height above the feed watermark, a coverage gap and a block whose manifest is missing; require coverage_unavailable instead of an empty terminal page.",
+      "Set recovery/unavailable state in an isolated fixture and repeat the reads; assert no false complete response is emitted.",
+      "Have I-05 attempt an absence/negative decision for every response; accept only the proved zero-event block and keep its checkpoint unchanged for unavailable responses.",
+      "Record both positive empty-manifest proof and rejection evidence, including source height/hash/epoch and persisted consumer state."
+    ],
+    "assertions": [
+      "Zero only for a retained covered zero manifest; missing/lagged/incomplete data gives unavailable."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/subcommand/server.rs::inscription_inventory",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F02"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Dogemap claim evaluator consuming absence/completeness evidence",
+    "wallet": "No wallet required for a zero-event block read; local block fixtures and an owned Testnet read path are sufficient.",
+    "variant": "Covered zero-event block; uncovered historical gap; height above watermark; missing manifest; recovering authority.",
+    "transport": "Terminal HTTP block page and consumer's atomic decision/checkpoint boundary.",
+    "services": [
+      "Universe ord-dogecoin feed",
+      "Shared redb database",
+      "dogemap-indexer I-05"
+    ],
+    "stateDependencies": [
+      "Complete zero-event block manifest",
+      "Actual contiguous coverage range",
+      "Retained feed watermark/hash",
+      "Consumer last accepted checkpoint and negative decisions"
+    ],
+    "inputs": [
+      "A covered block with exactly zero Doginals events",
+      "A node-confirmed block not yet retained by the feed",
+      "A gap below the ordinary index tip",
+      "A deliberately missing manifest"
+    ],
+    "actualResult": "The current inventory_complete=true flag is not bound to a historical block and cannot justify a zero-candidate Dogemap decision. The proposed completeness gate has not run.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_zero_events_require_retained_completeness -- --exact"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)"
+    ],
+    "proposedTestNames": [
+      "feed_zero_events_require_retained_completeness"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-CREATE-01",
+    "operation": "Creation identity and original/completion coordinates",
+    "workPackages": [
+      "P-03",
+      "P-02"
+    ],
+    "requirements": [
+      "P-C02",
+      "P-C03"
+    ],
+    "entryPoint": "InscriptionUpdater::index_transaction_inscriptions",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: resolve I-01/P-03 identity and completion rules and store independent expected coordinates for each raw transaction vector.",
+      "Index the first part of a multipart reveal; assert no completed creation event exists while assembly is incomplete.",
+      "Index the remaining reveal parts through the production binary and assert exactly one complete creation event with the elected ID and separate original/completion height/hash/transaction positions.",
+      "Compare intrinsic body/type/delegate bytes and assigned location against independently decoded source transactions; do not substitute the completion txid for the origin ID.",
+      "Restart the isolated provider between reveal parts and repeat the completion; require identical ID/body/event digest and no duplicate creation.",
+      "Complete the real isolated Testnet creation-to-provider-to-indexer journey and retain transaction IDs, block identities, feed event and authoritative readback before marking PASS."
+    ],
+    "assertions": [
+      "Split and single reveals preserve origin and completion independently with exact qualified ID."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/updater/inscription_updater.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F04"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Inscription creation recorder and Dogemap candidate consumer",
+    "wallet": "Isolated Testnet inscription wallet for the real creation journey; deterministic raw transactions for multipart fault vectors. Never use Mainnet test funds.",
+    "variant": "Single reveal; multipart reveal across blocks; multiple completions in one block; partial reveal interrupted by restart.",
+    "transport": "Dogecoin transaction/block ingestion -> inscription parser/updater -> redb -> feed creation event.",
+    "services": [
+      "Universe Dogecoin Core Testnet or controlled local RPC",
+      "Universe ord-dogecoin parser/updater",
+      "Shared redb database",
+      "dogemap-indexer I-02/I-05"
+    ],
+    "stateDependencies": [
+      "PARTIAL_TXID_TO_INSCRIPTION_TXIDS",
+      "INSCRIPTION_ID_TO_TXIDS / INSCRIPTION_TXID_TO_TX",
+      "INSCRIPTION_ID_TO_INSCRIPTION_ENTRY",
+      "PROPOSED creation events and intrinsic body objects",
+      "I-01 elected identity/completion profile"
+    ],
+    "inputs": [
+      "Pinned single-reveal raw transaction",
+      "Pinned split-reveal chain with different origin/completion heights",
+      "Known first and completion transaction coordinates",
+      "A partial chain interrupted before completion"
+    ],
+    "actualResult": "Source audit verified first reveal txid+i0 identity and completion entry height/timestamp, with no retained full origin/completion event coordinates. Proposed event recording and fixtures have not executed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-parser-compatibility creation_preserves_origin_and_completion -- --exact",
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_creation_retains_intrinsic_provenance -- --exact"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_parser_compatibility.rs (explicit Cargo target dogemap-parser-compatibility)",
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)"
+    ],
+    "proposedTestNames": [
+      "creation_preserves_origin_and_completion",
+      "feed_creation_retains_intrinsic_provenance"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-TRANSFER-01",
+    "operation": "Historical transfer scripts, values, offsets and fee/lost locations",
+    "workPackages": [
+      "P-02"
+    ],
+    "requirements": [
+      "P-C04"
+    ],
+    "entryPoint": "InscriptionUpdater::update_inscription_location",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: construct independently calculated input/output and inscription-offset vectors for each listed movement variant.",
+      "Index creation and spend through the production updater, capturing old script/value/offset before current input rows are removed.",
+      "Verify each persisted transfer's fromLocation and toLocation exactly match the relevant raw outputs, including multiple movements before the block ends.",
+      "For non-address scripts require original script hex and null display address; for fee/lost cases verify the qualified location status and actual settlement output without inventing an owner.",
+      "Replay the complete event history to a chosen height/hash and compare the resulting location with the authority's current satpoint at the same snapshot.",
+      "Perform the real Testnet sender-to-receiver transfer through provider, I-05 ownership projection and I-06 readback; refresh/restart and confirm the accepted owner persists."
+    ],
+    "assertions": [
+      "Same-block/multi-input/non-address/fee/lost fixtures reconstruct exact from/to ownership and current state."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/updater/inscription_updater.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F06"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Historical owner projection and current ownership reader",
+    "wallet": "Isolated Testnet sender/receiver wallets for the actual transfer journey; no wallet needed to read history.",
+    "variant": "Same-block transfers; multiple inputs; nonzero offsets; several inscriptions/output; non-address script; fee-to-coinbase; lost state.",
+    "transport": "Owned Dogecoin RPC block data -> shared satpoint tracker -> durable from/to events -> feed JSON.",
+    "services": [
+      "Universe Dogecoin Core",
+      "Universe ord-dogecoin inscription updater",
+      "Shared redb database",
+      "dogemap-indexer I-05/I-06"
+    ],
+    "stateDependencies": [
+      "INSCRIPTION_ID_TO_SATPOINT / SATPOINT_TO_INSCRIPTION_ID",
+      "OUTPOINT_TO_VALUE and input script provenance before removal",
+      "Qualified fee/sat movement rules",
+      "PROPOSED historical from/to locations and block events"
+    ],
+    "inputs": [
+      "A completed inscription at a known nonzero offset",
+      "A spend with multiple inputs/outputs",
+      "A same-block follow-up spend",
+      "An output with no address representation",
+      "Fee and lost-sat fixtures with exact input/output values"
+    ],
+    "actualResult": "Current satpoint rows are overwritten and prior operations are transient; the required historical script/value/offset feed is absent. No transfer acceptance test was performed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_transfers_preserve_historical_locations -- --exact",
+      "cargo +1.96.0 test --locked --test drc20-decisions --test inscription-json"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/drc20_decisions.rs",
+      "Existing tests/inscription_json.rs"
+    ],
+    "proposedTestNames": [
+      "feed_transfers_preserve_historical_locations"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-BODY-01",
+    "operation": "Intrinsic original bytes with bounded verified retrieval",
+    "workPackages": [
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C03"
+    ],
+    "entryPoint": "GET /api/v1/dogemap-feed/inscriptions/:id/body (PROPOSED)",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: create body fixtures spanning the inline threshold, including absent/empty and delegate-bearing cases, and persist their exact original bytes through production parsing.",
+      "Read each creation descriptor and assert byteLength/sha256/contentTypeBase64 refer to the intrinsic object, independently of delegated content.",
+      "For chunked bodies request successive bounded offset/length ranges until complete, checking identity/range/nextOffset on every response and full-body digest after reassembly.",
+      "Repeat with stale blockHash/databaseId/epoch and require 409; simulate missing/corrupt retained bytes and require truthful content_unavailable or integrity_failure.",
+      "Ensure I-02 follows only the advertised same-origin route, never /content or an arbitrary redirect, and does not classify unavailable content as invalid or absent.",
+      "Apply any body-length rejection only after I-01 specifies that rule, and capture a Testnet raw-body-to-parser readback proving exact content before PASS."
+    ],
+    "assertions": [
+      "Inline and chunked original bytes/type match digest; stale/missing data never substitutes delegate or empty body."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/subcommand/server.rs::inscription_inventory; src/authority_api.rs::resolved_content_metadata",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F02"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Protocol byte parser using intrinsic inscription content",
+    "wallet": "Isolated Testnet inscription wallet for real content creation; local fixtures for oversized/missing/corrupt storage variants.",
+    "variant": "Absent versus empty body; inline threshold boundary; chunked body; delegate present; stale reference; truncated/corrupt chunks.",
+    "transport": "HTTP feed descriptors and same-origin JSON body chunks using base64-chunks-v1.",
+    "services": [
+      "Universe ord-dogecoin body store and HTTP service",
+      "Shared redb database",
+      "dogemap-indexer I-02 body loader"
+    ],
+    "stateDependencies": [
+      "Intrinsic original body/content-type/delegate fields",
+      "PROPOSED immutable body objects with exact digest/length",
+      "Creation block hash, databaseId and source epoch",
+      "Capability inline/chunk bounds"
+    ],
+    "inputs": [
+      "Bodies immediately below/at/above maxInlineBodyBytes",
+      "Original content-type bytes not safely normalized as text",
+      "A delegate-bearing inscription with distinguishable original/delegated bodies",
+      "A stale generation reference",
+      "Truncated or wrong-digest chunk fixture"
+    ],
+    "actualResult": "Existing inventory resolves delegate metadata and does not implement the proposed generation-bound intrinsic body chunk route. No body completeness or digest acceptance was executed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_intrinsic_body_chunks_are_bound_and_verified -- --exact",
+      "cargo +1.96.0 test --locked --test inscription-json --test authority-api-contract"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/inscription_json.rs",
+      "Existing tests/authority_api_contract.rs"
+    ],
+    "proposedTestNames": [
+      "feed_intrinsic_body_chunks_are_bound_and_verified"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-ORDER-01",
+    "operation": "Evidence-qualified event and competing-claim order",
+    "workPackages": [
+      "P-03",
+      "P-02"
+    ],
+    "requirements": [
+      "P-C06"
+    ],
+    "entryPoint": "InscriptionUpdater / I-01 profile decision",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: resolve each open ordering case in I-01 using pinned governing evidence and record an explicit decision plus expected raw-vector result.",
+      "Assign an immutable orderProfile version; do not infer it from sequence_number0, current inscription number or HashMap iteration.",
+      "Index each vector through the production provider and compare origin/completion coordinates, orderKey and dense eventOrdinal to independent expectations.",
+      "Vary insertion order, page size and restart point while preserving the same block data; require identical semantic event order and eventsHash.",
+      "Run I-05 competing-claim evaluation over the complete event set and verify the elected winner/rejection decisions match the same profile.",
+      "If any validity/priority case remains ambiguous or differs, retain BLOCKED and preserve the exact vector and disagreement; do not publish a convenient guessed order."
+    ],
+    "assertions": [
+      "Independent split/single, vin/vout and fee vectors establish elected orderProfile before publication."
+    ],
+    "status": "BLOCKED",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/updater.rs; src/index/updater/inscription_updater.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F04"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Protocol maintainer electing orderProfile and competing-claim evaluator",
+    "wallet": "No wallet for reference ordering analysis; isolated Testnet wallets only after semantics are elected for real competing-claim journeys.",
+    "variant": "Single versus multipart duplicate race; multiple completions; nonzero/sibling vout; fee settlement; differing storage iteration orders.",
+    "transport": "Pinned raw transaction corpus -> production parser/updater -> ordered feed descriptors -> I-01/I-05 decision.",
+    "services": [
+      "Universe ord-dogecoin parser/updater",
+      "Pinned protocol/reference sources",
+      "dogemap-indexer I-01/I-05"
+    ],
+    "stateDependencies": [
+      "Elected parserProfile/orderProfile",
+      "Origin/completion coordinates",
+      "Per-block eventOrdinal/orderKey",
+      "Independent expected claim-priority vectors"
+    ],
+    "inputs": [
+      "Protocol report vectors for split/single competing claims and fee ordering",
+      "Exact block transaction arrays",
+      "Provider current sequence_number0 and location-order numbering observations",
+      "Independent expected results approved by I-01 evidence"
+    ],
+    "actualResult": "Current internal processing order is established, but governing Dogemap priority for the identified cases remains unresolved. This row stays BLOCKED until I-01 supplies an evidenced profile; no order tests have run.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-parser-compatibility qualified_order_profile_matches_reference_vectors -- --exact",
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_order_is_stable_across_pagination -- --exact"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_parser_compatibility.rs (explicit Cargo target dogemap-parser-compatibility)",
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)"
+    ],
+    "proposedTestNames": [
+      "qualified_order_profile_matches_reference_vectors",
+      "feed_order_is_stable_across_pagination"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-PAGINATION-01",
+    "operation": "Stable bounded cursor pagination under concurrent commits",
+    "workPackages": [
+      "P-01"
+    ],
+    "requirements": [
+      "P-C01",
+      "P-C02",
+      "P-C05"
+    ],
+    "entryPoint": "Feed block cursor (PROPOSED)",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: seed a complete multi-event block and request its first page at the minimum supported limit.",
+      "Between page requests commit unrelated later blocks; continue paging and assert identity/total/digest remain tied to the original immutable block.",
+      "Repeat pages and vary supported page limits, checking dense ordinals, no missing/duplicated committed events and strict next-cursor advancement.",
+      "Feed malformed, oversized and out-of-range cursors; require bounded 400 errors before large allocation or scan.",
+      "Replace the requested block/profile/database generation or trigger an epoch change between pages; require 409 and have I-02 discard the incomplete accumulated block.",
+      "Verify the consumer commits no claim/checkpoint until all pages and the full digest pass, then retain captured page identities and consumer commit evidence."
+    ],
+    "assertions": [
+      "Every page retains identity, cursor strictly advances, total/digest stable; changed snapshot gives409."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index.rs::get_latest_inscriptions_with_prev_and_next",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F01",
+      "P-F05"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Resumable read-only block-feed consumer",
+    "wallet": "None; deterministic read/commit races run in an isolated provider integration harness.",
+    "variant": "Minimum/default/maximum page size; malformed cursor; duplicate page; concurrent append; changed fork/profile/generation.",
+    "transport": "Bounded HTTP JSON block pages with opaque manifest-bound cursors.",
+    "services": [
+      "Universe ord-dogecoin HTTP service",
+      "Shared redb database",
+      "dogemap-indexer I-02 pagination and retry loop"
+    ],
+    "stateDependencies": [
+      "Retained block manifest digest/count",
+      "Cursor tuple including databaseId/profile/height/hash/epoch/ordinal",
+      "One redb read root per response",
+      "Consumer page accumulation state"
+    ],
+    "inputs": [
+      "A complete block requiring multiple pages",
+      "Cursor from page1",
+      "Out-of-range/oversized/malformed cursors",
+      "A writer commit between pages",
+      "A fork or generation replacement between pages"
+    ],
+    "actualResult": "The current global inventory uses an inscription-number cursor without the required immutable block/generation/epoch binding. No proposed pagination test was executed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_cursors_bind_manifest_and_snapshot -- --exact"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)"
+    ],
+    "proposedTestNames": [
+      "feed_cursors_bind_manifest_and_snapshot"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-EPOCH-01",
+    "operation": "Durable provider epoch and database generation identity",
+    "workPackages": [
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C05"
+    ],
+    "entryPoint": "Reorg::handle_reorg / feed capabilities",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: retain a savepoint, read source epoch/databaseId and obtain a valid block cursor and body reference.",
+      "Trigger a controlled recoverable fork in the isolated harness and assert Reorg::handle_reorg increments the existing counter atomically with restored state.",
+      "Catch up to the prior numeric height on the replacement fork and verify old cursor/body requests still reject because source identity changed.",
+      "Restart the provider and assert the durable source epoch and databaseId persist consistently.",
+      "Exercise an isolated external restore/rebuild; rotate databaseId before readiness and verify that a reused numeric epoch cannot validate prior references.",
+      "Check I-05 compares provider.reorgEpoch/databaseId independently of its MySQL projection checkpoint.reorgEpoch and never equates the two counters."
+    ],
+    "assertions": [
+      "Counter survives restore; external rebuild/restore changes databaseId; old cursor/body references reject."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/reorg.rs::handle_reorg; src/authority_api.rs::IndexCapabilities",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F05"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Provider recovery operator and source-generation-aware consumer",
+    "wallet": "None; database/chain rollback and restore fixtures are isolated and do not spend funds.",
+    "variant": "Recoverable savepoint rollback; catch-up to same height; process restart; external database restore; rebuild generation.",
+    "transport": "Redb write/restore transaction -> atomic feed capabilities and block/body HTTP identity.",
+    "services": [
+      "Universe ord-dogecoin reorg handler",
+      "Shared redb database",
+      "dogemap-indexer I-02/I-05"
+    ],
+    "stateDependencies": [
+      "STATISTIC_TO_COUNT / Statistic::Reorgs",
+      "Persistent savepoints",
+      "PROPOSED persistent databaseId and feed watermark",
+      "Consumer source epoch/databaseId separately from projection epoch"
+    ],
+    "inputs": [
+      "A database with at least one retained savepoint",
+      "A valid cursor/body reference before rollback",
+      "A replacement fork reaching the same height",
+      "An older database copy used only in an isolated restore fixture"
+    ],
+    "actualResult": "Fresh source already preserves/increments Statistic::Reorgs around restore. The proposed feed exposure, databaseId lifecycle and stale-reference rejection are absent and untested.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_epoch_and_database_generation_invalidate_cursors -- --exact",
+      "cargo +1.96.0 test --locked --test drc20-decisions"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/drc20_decisions.rs"
+    ],
+    "proposedTestNames": [
+      "feed_epoch_and_database_generation_invalidate_cursors"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-RECOVERY-01",
+    "operation": "Feed and consumer rollback, partial assembly and restart recovery",
+    "workPackages": [
+      "P-03",
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C05"
+    ],
+    "entryPoint": "Reorg::handle_reorg -> dogemap-indexer I-05",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: create enough isolated chain history to retain a savepoint, then index multipart completion and a subsequent transfer and accept their consumer checkpoint.",
+      "Start paging the affected block, fork the local chain before completion or transfer, and drive the production provider's normal recoverable-reorg path.",
+      "Assert detached feed events/manifests disappear from availability, partial state and watermark restore together, and old page/body references reject.",
+      "Crash/restart immediately before and after the restore commit in controlled fixtures; require an internally consistent old or restored state, with no half-published manifest.",
+      "Have I-05 find the common anchor, atomically rewind claims/owners/history/checkpoint, then replay replacement blocks and independently read back resulting ownership.",
+      "For a fork beyond retained recovery, assert provider_unrecoverable and no consumer advancement; use the documented restore/replay procedure rather than clearing the error."
+    ],
+    "assertions": [
+      "Fork removes detached completions/transfers, restores watermark and blocks stale owners/negative decisions."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index/reorg.rs; src/index/updater/inscription_updater.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F05"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Shared authority recovery operator and indexer rollback worker",
+    "wallet": "No public wallet activity for induced faults; reorg/crash tests use isolated deterministic blocks. Public Testnet remains the real workflow gate.",
+    "variant": "Fork before/after multipart completion; transfer detached; reorg during paging; crash around restore; deeper-than-retained recovery.",
+    "transport": "Owned local test RPC chain changes -> production reorg/savepoint flow -> feed HTTP -> I-05 atomic rewind/replay.",
+    "services": [
+      "Controlled test RPC/blocks",
+      "Universe ord-dogecoin reorg/parser/updater",
+      "Shared redb database",
+      "dogemap-indexer I-05 and MySQL projection"
+    ],
+    "stateDependencies": [
+      "Retained savepoints and source epoch",
+      "Partial inscription assembly tables",
+      "PROPOSED complete event/body/manifest state and watermark",
+      "Consumer claims, owners, event history and checkpoint"
+    ],
+    "inputs": [
+      "A forkable chain containing a multipart creation and later transfer",
+      "A provider savepoint predating completion",
+      "An in-progress page sequence",
+      "Deterministic failpoints immediately before/after restore commit"
+    ],
+    "actualResult": "Existing savepoint recovery was inspected, but no feed history/manifests or consumer rollback contract exists to verify. No recovery flow was executed in preparation.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_reorg_restores_partial_history_and_consumer_anchor -- --exact",
+      "cargo +1.96.0 test --locked --test drc20-decisions --test inscription-json"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/drc20_decisions.rs",
+      "Existing tests/inscription_json.rs"
+    ],
+    "proposedTestNames": [
+      "feed_reorg_restores_partial_history_and_consumer_anchor"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-PROFILE-01",
+    "operation": "Doginals parser profile compatibility qualification",
+    "workPackages": [
+      "P-03"
+    ],
+    "requirements": [
+      "P-C06",
+      "P-C07"
+    ],
+    "entryPoint": "Inscription::from_transactions / I-01",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: resolve accepted envelope/input/continuation/identity rules in I-01 and pin the governing source commits and independent expected results.",
+      "Create the explicit dogemap-parser-compatibility integration target so Cargo lib test=false cannot silently skip the intended tests.",
+      "Execute the production binary/parser path over every listed raw-vector variant and compare acceptance, ID, intrinsic bytes and original/completion coordinates.",
+      "When a provider change is needed, version the parser/profile and identify affected historical outcomes rather than changing the label on an existing database.",
+      "Reconcile continuation storage/migration and replay requirements with P-02, keeping affected existing consumers under targeted regression.",
+      "Publish the profile as qualified only when all cases that can change validity/ownership/priority agree with evidence; otherwise preserve BLOCKED with the disagreeing raw vector and next decision."
+    ],
+    "assertions": [
+      "Accepted input/continuation/ID cases match independently pinned raw transaction vectors and identified profile."
+    ],
+    "status": "BLOCKED",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/inscription.rs::from_transactions; src/index/updater/inscription_updater.rs",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F04"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Doginals parser compatibility maintainer and Dogemap protocol implementer",
+    "wallet": "No wallet required for pinned raw-vector analysis; Testnet inscription wallets used only for later real end-to-end qualification.",
+    "variant": "vin0/vin1; txid versus outpoint continuation; sibling/nonzero vout; offset-zero existing inscription; malformed envelope; split reveal.",
+    "transport": "Independent raw script/transaction vectors -> production parser/indexer path -> versioned profile evidence.",
+    "services": [
+      "Universe ord-dogecoin parser/updater",
+      "Pinned Dogecoin Core and Doginals reference sources",
+      "dogemap-indexer I-01"
+    ],
+    "stateDependencies": [
+      "Explicit elected parserProfile",
+      "Partial continuation association and stored reveal transactions",
+      "Profile-specific identity/ordering rules",
+      "Versioned history projection and coverage qualification"
+    ],
+    "inputs": [
+      "Pinned protocol report vectors with exact raw transactions",
+      "Distinct sibling outputs of one previous transaction",
+      "A new envelope in vin1",
+      "Existing tracked offset-zero inscription",
+      "Independent expected acceptance/ID/body results"
+    ],
+    "actualResult": "vin0-only parsing, txid-only continuation association and offset-zero discovery conditions are verified facts. Their normative compatibility with required Dogemap claims remains BLOCKED; no profile is falsely declared qualified.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-parser-compatibility qualified_parser_profile_matches_raw_transactions -- --exact",
+      "cargo +1.96.0 test --locked --test inscription-json --test authority-api-contract --test drc20-decisions --test compatibility"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_parser_compatibility.rs (explicit Cargo target dogemap-parser-compatibility)",
+      "Existing tests/inscription_json.rs",
+      "Existing tests/authority_api_contract.rs",
+      "Existing tests/drc20_decisions.rs",
+      "Existing tests/compatibility.rs"
+    ],
+    "proposedTestNames": [
+      "qualified_parser_profile_matches_raw_transactions"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-PUSH-01",
+    "operation": "Correct bounded PUSHDATA2/PUSHDATA4 parsing",
+    "workPackages": [
+      "P-03"
+    ],
+    "requirements": [
+      "P-C06",
+      "P-C07"
+    ],
+    "entryPoint": "InscriptionParser::decode_push_datas",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: construct exact independent fixtures from the pinned Dogecoin Core LE push-length rules, retaining expected pushed bytes and parser outcomes.",
+      "Run the baseline production-path fixture to capture the discrepancy for 4d0001 and 4e00010000, then apply the P-03 length/bounds repair under the elected versioned profile.",
+      "Re-run valid boundary pushes and compare full returned body bytes, not only parse success.",
+      "Exercise missing length bytes, payload truncation and oversized lengths; assert deterministic rejection without panic, overflow or allocation before bounds validation.",
+      "Compare changed historical candidate classes against the prior profile and document the required P-02 replay/migration; do not silently reinterpret existing coverage.",
+      "Run affected inscription/API/DRC-20 compatibility targets and retain raw vectors plus expected/actual results before changing this row to PASS."
+    ],
+    "assertions": [
+      "75/76/255/256/520 boundaries, explicit pushdata4/truncation and exact body bytes match Core LE rules."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/inscription.rs::decode_push_datas; Dogecoin Core script.h P-S02",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F03"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Parser maintainer responsible for byte-accurate bounded decoding",
+    "wallet": "None for script-boundary fixtures; protocol-level verification also uses the production indexing path.",
+    "variant": "75/76/255/256/520-byte pushes; explicit PUSHDATA4; short length field; truncated payload; oversized length; trailing opcode.",
+    "transport": "Raw Dogecoin script bytes -> InscriptionParser::decode_push_datas -> qualified inscription parsing/indexing.",
+    "services": [
+      "Universe ord-dogecoin parser",
+      "Pinned Dogecoin Core script serializer/GetOp2 reference",
+      "Shared provider integration harness"
+    ],
+    "stateDependencies": [
+      "Elected parserProfile/version",
+      "LE16/LE32 length extraction and bounds",
+      "Independent script serialization fixtures",
+      "Historical outcome comparison/replay decision"
+    ],
+    "inputs": [
+      "4d0001 followed by256 aa bytes",
+      "4e00010000 followed by256 aa bytes",
+      "Boundary payloads serialized by the pinned Core-compatible builder",
+      "Short/truncated/oversized and trailing-opcode vectors"
+    ],
+    "actualResult": "The inspected PUSHDATA2/PUSHDATA4 expressions include the opcode and omit the last encoded length byte, contradicting Core LE decoding. The defect is source-confirmed; proposed production-path tests remain NOT TESTED.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-parser-compatibility pushdata_lengths_match_core_and_are_bounded -- --exact",
+      "cargo +1.96.0 test --locked --test inscription-json --test drc20-decisions --test compatibility"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_parser_compatibility.rs (explicit Cargo target dogemap-parser-compatibility)",
+      "Existing tests/inscription_json.rs",
+      "Existing tests/drc20_decisions.rs",
+      "Existing tests/compatibility.rs"
+    ],
+    "proposedTestNames": [
+      "pushdata_lengths_match_core_and_are_bounded"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-REPLAY-01",
+    "operation": "Truthful historical coverage upgrade and resumable backfill",
+    "workPackages": [
+      "P-02"
+    ],
+    "requirements": [
+      "P-C02",
+      "P-C04"
+    ],
+    "entryPoint": "Index feed schema + historical projection replay (PROPOSED)",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: validate archival input availability and capacity on approved indexing infrastructure, then initialize additive feed metadata on an isolated upgrade fixture with no claimed historical coverage.",
+      "Start forward event capture at an explicit height/hash while staging bounded replay through the same qualified provider logic from the proven required history boundary.",
+      "Persist resumable replay checkpoints and interrupt/restart the maintenance flow; verify idempotent event/manifests and no advancement across an unfilled gap.",
+      "At overlap with live capture compare exact block identity and semantic eventsHash; reject conflicts or forked anchors instead of overwriting evidence.",
+      "Join coverage ranges only after overlap verification and reconstruction of current ownership at the same authoritative height/hash.",
+      "Simulate missing historical input data; leave the affected range unavailable and the consumer checkpoint unchanged. Validate this on fixtures before any authorized production maintenance; no second public Doginals authority is deployed."
+    ],
+    "assertions": [
+      "Upgrade starts unavailable; bounded replay fills verified ranges, overlap digests and current locations agree."
+    ],
+    "status": "FAIL",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: src/index.rs::SCHEMA_VERSION/table declarations",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [
+      "P-F02",
+      "P-F06"
+    ],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Provider maintenance operator performing historical coverage backfill",
+    "wallet": "None; replay uses existing chain data from the owned archival node and must not manufacture Mainnet transactions.",
+    "variant": "Upgrade with no feed history; forward capture; interrupted replay; live/replay overlap; history gap; forked anchor; reconciliation mismatch.",
+    "transport": "Owned archival Dogecoin RPC -> qualified shared replay logic -> staged/additive redb projection -> feed coverage.",
+    "services": [
+      "Existing Universe archival Dogecoin Core",
+      "Existing shared ord-dogecoin authority",
+      "Approved indexing storage and bounded maintenance worker",
+      "dogemap-indexer I-02/I-05"
+    ],
+    "stateDependencies": [
+      "Schema6 legacy current state",
+      "PROPOSED feed version/identity/body/event/manifest tables",
+      "Coverage segments and contiguous watermark",
+      "Replay height/hash/profile checkpoints",
+      "Current authoritative locations at a shared anchor"
+    ],
+    "inputs": [
+      "An existing database with no feed tables/history",
+      "The proven required historical start or reconstructible checkpoint",
+      "A finite replay range overlapping live-captured blocks",
+      "An intentionally missing archival transaction/input or changed block hash"
+    ],
+    "actualResult": "Current schema lacks the required historical events and cannot reconstruct them from overwritten current rows. No upgrade, replay, reindex or migration was executed.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test dogemap-feed-contract feed_upgrade_and_replay_publish_only_verified_coverage -- --exact",
+      "cargo +1.96.0 test --locked --test compatibility --test drc20-decisions"
+    ],
+    "testPaths": [
+      "PROPOSED NEW tests/dogemap_feed_contract.rs (explicit Cargo target dogemap-feed-contract)",
+      "Existing tests/compatibility.rs",
+      "Existing tests/drc20_decisions.rs"
+    ],
+    "proposedTestNames": [
+      "feed_upgrade_and_replay_publish_only_verified_coverage"
+    ],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Implement the listed PROPOSED NEW test functions and register their explicit Cargo targets before running these commands.",
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  },
+  {
+    "id": "P-LEGACY-01",
+    "operation": "Preserve existing shared authority APIs and affected protocol consumers",
+    "workPackages": [
+      "P-03",
+      "P-02",
+      "P-01"
+    ],
+    "requirements": [
+      "P-C07"
+    ],
+    "entryPoint": "Existing authority-api-contract / inscription-json / drc20-decisions targets",
+    "network": "NOT TESTED; planned Dogecoin Testnet plus controlled local reorg/crash fixtures",
+    "prerequisites": [
+      "I-01 qualified rules/profile",
+      "Existing Universe-owned provider and archival node",
+      "P-03 then P-02 then P-01 dependencies as applicable"
+    ],
+    "steps": [
+      "PROPOSED: record the actual existing API and affected shared-consumer contract expectations at the accepted pre-implementation revision.",
+      "After P-03/P-02/P-01 implementation run the existing explicit authority-api-contract, inscription-json, drc20-decisions and compatibility targets without weakening assertions.",
+      "Compare existing route serialization/content delegation/output ASM behavior and flag combinations so the new feed does not silently alter established consumers.",
+      "For parser/state changes, run every affected DRC-20/Dunes and wallet/inscription flow through the real Testnet services and verify authoritative persisted readback.",
+      "Exercise the proposed additive upgrade and compatible rollback against an isolated data copy; confirm the old binary cannot claim new stale feed readiness or read incompatible state.",
+      "Record repaired versus unchanged behavior and retained evidence by revision/network; leave unrelated or unexecuted regression rows NOT TESTED and block release until required affected rows pass."
+    ],
+    "assertions": [
+      "All changed shared parser/state/API dependencies pass targeted existing tests and required Testnet journeys."
+    ],
+    "status": "NOT TESTED",
+    "evidence": [
+      "Source baseline ab2934f3ae027160274ff199fb7a19fd030041a8: Cargo.toml; existing tests; source annotation-only assurance",
+      "docs/preparation-dogemap/findings.md",
+      "docs/preparation-dogemap/work-packages.md"
+    ],
+    "defectIds": [],
+    "revision": "ab2934f3ae027160274ff199fb7a19fd030041a8",
+    "testTime": null,
+    "owner": "bitcoinuniverseio/ord-dogecoin; shared provider P-01/P-02/P-03",
+    "role": "Existing authority API consumers and shared-protocol regression owner",
+    "wallet": "Existing tests use isolated fixtures; real affected signing/transfer journeys require separate isolated Testnet wallets only.",
+    "variant": "Old inventory/content/output/capability contracts; DRC-20 enabled/disabled; Dunes/transaction/sat flags; accepted old binary/data rollback.",
+    "transport": "Existing HTTP APIs, production parser/updater, redb state and existing integration test targets.",
+    "services": [
+      "Shared Universe ord-dogecoin authority",
+      "Existing explorer/wallet/content consumers",
+      "Existing DRC-20/Dunes consumers affected by shared changes",
+      "Owned Dogecoin Testnet node"
+    ],
+    "stateDependencies": [
+      "Existing JSON DTOs/routes",
+      "Existing inscription/DRC-20/Dunes ledgers",
+      "Current DB flags/schema",
+      "Backward-compatible binary/data boundary",
+      "No changes to unrelated service configuration"
+    ],
+    "inputs": [
+      "Existing tests and their expected output contracts",
+      "Pre-change accepted capability/output/inscription fixtures",
+      "DRC-20/Dunes regression transactions actually affected by parser changes",
+      "A compatible rollback binary and isolated database copy"
+    ],
+    "actualResult": "No functional regression tests ran in preparation. Separate comment-only and Rust parser assurance passed; that evidence is not treated as runtime/API/protocol acceptance.",
+    "verificationCommands": [
+      "cargo +1.96.0 test --locked --test authority-api-contract --test inscription-json --test drc20-decisions --test compatibility"
+    ],
+    "testPaths": [
+      "Existing tests/authority_api_contract.rs",
+      "Existing tests/inscription_json.rs",
+      "Existing tests/drc20_decisions.rs",
+      "Existing tests/compatibility.rs"
+    ],
+    "proposedTestNames": [],
+    "verificationStatus": "NOT TESTED",
+    "verificationPlanState": "PROPOSED; commands/test names/new test paths are instructions only and have not executed in preparation.",
+    "verificationPrerequisites": [
+      "Use the existing Rust 1.96.0 toolchain, pinned lockfile and required production-binary integration harness dependencies.",
+      "Run induced reorg/crash/corruption fixtures only against isolated non-production state; complete applicable real journeys on the owned Dogecoin Testnet service."
+    ]
+  }
+]
