@@ -64,7 +64,7 @@ impl<'index> Updater<'_> {
 
   pub(crate) fn update_index(&mut self) -> Result {
     let mut wtx = self.index.begin_write()?;
-    let starting_height = u32::try_from(self.index.client.get_block_count()?).unwrap() + 1;
+    let starting_height = u32::try_from(self.index.client().get_block_count()?).unwrap() + 1;
 
     wtx
       .open_table(WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP)?
@@ -111,7 +111,7 @@ impl<'index> Updater<'_> {
         progress_bar.inc(1);
 
         if progress_bar.position() > progress_bar.length().unwrap() {
-          if let Ok(count) = self.index.client.get_block_count() {
+          if let Ok(count) = self.index.client().get_block_count() {
             progress_bar.set_length(count + 1);
           } else {
             log::warn!("Failed to fetch latest block height");
@@ -417,6 +417,8 @@ impl<'index> Updater<'_> {
       .map(|lost_sats| lost_sats.value())
       .unwrap_or(0);
 
+    let feed_journal;
+
     {
       let mut inscription_updater = InscriptionUpdater::new(
         self.height,
@@ -484,6 +486,7 @@ impl<'index> Updater<'_> {
           self.index_transaction_sats(
             tx,
             *txid,
+            u32::try_from(tx_offset)?,
             &mut sat_to_satpoint,
             &mut input_sat_ranges,
             &mut sat_ranges_written,
@@ -499,6 +502,7 @@ impl<'index> Updater<'_> {
           self.index_transaction_sats(
             tx,
             *txid,
+            0,
             &mut sat_to_satpoint,
             &mut coinbase_inputs,
             &mut sat_ranges_written,
@@ -534,10 +538,23 @@ impl<'index> Updater<'_> {
           outpoint_to_sat_ranges.insert(&OutPoint::null().store(), lost_sat_ranges.as_slice())?;
         }
       } else {
-        for (tx, txid) in block.txdata.iter().skip(1).chain(block.txdata.first()) {
-          lost_sats += inscription_updater.index_transaction_inscriptions(tx, *txid, None)?;
+        for (tx_index, (tx, txid)) in block
+          .txdata
+          .iter()
+          .enumerate()
+          .skip(1)
+          .chain(block.txdata.iter().enumerate().take(1))
+        {
+          lost_sats += inscription_updater.index_transaction_inscriptions(
+            tx,
+            *txid,
+            u32::try_from(tx_index)?,
+            None,
+          )?;
         }
       }
+
+      feed_journal = std::mem::take(&mut inscription_updater.journal.records);
 
       if index.index_drc20 && self.height >= index.first_inscription_height {
         let operations = inscription_updater.operations.clone();
@@ -609,25 +626,18 @@ impl<'index> Updater<'_> {
       }
     }
 
-    // IMPLEMENTATION-HANDOFF [P-02] FEED-COMMIT; P-C02..05/P-C07, P-F02/P-F06.
-    // InscriptionUpdater.operations is transient and consumed for DRC-20 only;
-    // the block hash is persisted without any complete Doginals event manifest.
-    // 1. Retain creation/transfer events from the shared updater for every
-    //    inscription-enabled block, independently of index_drc20/index_dunes.
-    //    Collect before operations are consumed; preserve existing consumers.
-    // 2. Pass original block transaction coordinates into the qualified parser
-    //    and event recorder. Finalize fee-to-coinbase locations before closing
-    //    a block, but assign dense eventOrdinal by I-01/P-03 orderProfile, not
-    //    HashMap iteration, current number, or coinbase processing position.
-    // 3. Write the full ordered events, intrinsic bodies, zero-event manifest,
-    //    exact parent/hash/count/digest and contiguous coverage in this same
-    //    wtx as the block hash. Any parse/store/RPC integrity error aborts it.
-    //    P-02 storage/backfill must never publish a gap as an empty block.
-    // 4. PROPOSED dogemap-feed-contract asserts create+transfer in one block,
-    //    multiple inputs, fee/lost outputs, DRC-20 off, duplicate replay and
-    //    crash before commit. Regress drc20-decisions + inscription-json.
-    //    No schema/backfill execution in preparation; work-packages.md P-02
-    //    defines tests, staging safety, acceptance and reversible rollout.
+    // Dogemap feed journal: this block's location records and the journal
+    // range, in the same write transaction as the block hash, so a committed
+    // block always has its complete journal and a rolled-back one has none.
+    // Independent of the DRC-20 and Dunes flags, which only read their own
+    // copies of the updater's operations.
+    dogemap_feed::record_block(
+      wtx,
+      self.height,
+      feed_journal,
+      index.first_inscription_height,
+    )?;
+
     height_to_block_hash.insert(&self.height, &block.header.block_hash().store())?;
 
     self.height += 1;
@@ -645,6 +655,7 @@ impl<'index> Updater<'_> {
     &mut self,
     tx: &Transaction,
     txid: Txid,
+    tx_index: u32,
     sat_to_satpoint: &mut Table<u64, &SatPointValue>,
     input_sat_ranges: &mut VecDeque<(u64, u64)>,
     sat_ranges_written: &mut u64,
@@ -653,7 +664,12 @@ impl<'index> Updater<'_> {
     index_inscriptions: bool,
   ) -> Result {
     if index_inscriptions {
-      inscription_updater.index_transaction_inscriptions(tx, txid, Some(input_sat_ranges))?;
+      inscription_updater.index_transaction_inscriptions(
+        tx,
+        txid,
+        tx_index,
+        Some(input_sat_ranges),
+      )?;
     }
 
     for (vout, output) in tx.output.iter().enumerate() {

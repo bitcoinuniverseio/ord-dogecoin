@@ -1,6 +1,7 @@
 use super::*;
 
 pub mod balances;
+mod dogemap_pushdata_audit;
 pub mod epochs;
 pub mod find;
 mod index;
@@ -19,6 +20,10 @@ pub mod wallet;
 pub(crate) enum Subcommand {
   #[command(about = "List all dune balances")]
   Balances,
+  #[command(
+    about = "Report input-0 scriptSigs whose PUSHDATA2/PUSHDATA4 decoding differs between the compat parser and Dogecoin Core"
+  )]
+  DogemapPushdataAudit(dogemap_pushdata_audit::DogemapPushdataAudit),
   #[command(about = "List the first satoshis of each reward epoch")]
   Epochs,
   #[command(about = "Find a satoshi's current location")]
@@ -51,6 +56,7 @@ impl Subcommand {
   pub(crate) fn run(self, options: Options) -> SubcommandResult {
     match self {
       Self::Balances => balances::run(options),
+      Self::DogemapPushdataAudit(audit) => audit.run(options),
       Self::Epochs => epochs::run(),
       Self::Find(find) => find.run(options),
       Self::Index => index::run(options),

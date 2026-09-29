@@ -42,7 +42,7 @@ impl Reorg {
         for depth in 1..max_recoverable_reorg_depth {
           let index_block_hash = index.block_hash(height.checked_sub(depth))?;
           let bitcoind_block_hash = index
-            .client
+            .client()
             .get_block_hash(u64::from(height.saturating_sub(depth)))
             .into_option()?;
 
@@ -57,24 +57,20 @@ impl Reorg {
     }
   }
 
-  // IMPLEMENTATION-HANDOFF [P-02] FEED-REORG; P-C05/P-C07, P-F02/P-F05.
-  // This revision already preserves/increments Statistic::Reorgs around the
-  // savepoint restore. Reuse it for P-01 reorgEpoch; do not add another counter.
-  // 1. Include feed manifests/events/coverage in the restored redb state, then
-  //    expose restored watermark+new epoch atomically. Drop detached block
-  //    availability and make old page/body cursors fail with typed 409.
-  // 2. Persist/rotate databaseId on rebuild or external restore; an older
-  //    backup cannot silently reuse a consumer's generation. Hold readiness
-  //    false while integrity/coverage reconciliation is incomplete.
-  // 3. PROPOSED dogemap-feed-contract must restore while paging, reapply same
-  //    height on another fork, remove partial-reveal completion and transfers,
-  //    restart after restore, and verify no stale owner/negative decisions in
-  //    dogemap-indexer I-05. Beyond savepoints, stop claims with unavailable
-  //    state; never clear unrecoverably_reorged just to resume the consumer.
-  // 4. Preserve existing DRC-20/Dunes rollback behavior. See work-packages.md
-  //    P-02 for test commands and coordinated rollback; no reorg induced here.
+  /// Restore the oldest savepoint. Every table, the Dogemap feed journal and
+  /// its journal range included, returns to the savepoint's contents, so the
+  /// feed serves the rolled-back chain exactly as it was then; the new value
+  /// of `Statistic::Reorgs` is the feed's `reorgEpoch` and invalidates every
+  /// earlier cursor. The feed's database id and creation coverage start are
+  /// the generation, not chain state, so they are carried across the restore.
   pub(crate) fn handle_reorg(index: &Index, height: u32, depth: u32) -> Result {
     log::info!("rolling back database after reorg of depth {depth} at height {height}");
+
+    // Read from a separate read transaction: redb stages the root of every
+    // table opened in a write transaction when the handle is dropped, and
+    // restore_savepoint does not discard staged roots, so a table opened in
+    // `wtx` before the restore would keep its pre-restore contents.
+    let feed_generation = dogemap_feed::preserve_meta(&index.database.begin_read()?)?;
 
     let mut wtx = index.begin_write()?;
 
@@ -94,6 +90,7 @@ impl Reorg {
     wtx
       .open_table(STATISTIC_TO_COUNT)?
       .insert(&Statistic::Reorgs.key(), &(reorgs_before + 1))?;
+    dogemap_feed::reinstate_meta(&wtx, feed_generation)?;
 
     Index::increment_statistic(&wtx, Statistic::Commits, 1)?;
     wtx.commit()?;
@@ -110,7 +107,7 @@ impl Reorg {
     if (height < SAVEPOINT_INTERVAL || height % SAVEPOINT_INTERVAL == 0)
       && u32::try_from(
       index
-          .client
+          .client()
           .get_block_count()?
         )
         .unwrap()

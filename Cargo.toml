@@ -97,6 +97,14 @@ path = "tests/drc20_decisions.rs"
 name = "inscription-json"
 path = "tests/inscription_json.rs"
 
+[[test]]
+name = "dogemap-feed-contract"
+path = "tests/dogemap_feed_contract.rs"
+
+[[test]]
+name = "dogemap-parser-compatibility"
+path = "tests/dogemap_parser_compatibility.rs"
+
 [build-dependencies]
 pulldown-cmark = "0.9.2"
 

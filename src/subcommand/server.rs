@@ -59,6 +59,7 @@ use {
 use crate::drc20::token_info::{ExtendedTokenInfo, HolderBalanceForTick, HoldersInfoForTick};
 use crate::templates::{DRC20Balance, DRC20Output, DRC20UtxoOutput};
 
+mod dogemap_feed;
 mod error;
 mod query;
 
@@ -308,6 +309,12 @@ const DUNE_INDEX_ABSENT: &str =
 
 impl Server {
   pub(crate) fn run(self, options: Options, index: Arc<Index>, handle: Handle) -> SubcommandResult {
+    // The Dogemap feed identifies its network by genesis hash; refuse a node
+    // or an index from another network before serving anything, and create
+    // the feed generation id before the index thread takes the writer.
+    index.dogemap_feed_check_network()?;
+    index.dogemap_feed_initialize()?;
+
     Runtime::new()?.block_on(async {
       let index_clone = index.clone();
 
@@ -358,6 +365,22 @@ impl Server {
           get(Self::drc20_transferable_inventory),
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
+        .route(
+          "/api/v1/dogemap-feed/capabilities",
+          get(Self::dogemap_feed_capabilities),
+        )
+        .route(
+          "/api/v1/dogemap-feed/blocks/:height",
+          get(Self::dogemap_feed_block),
+        )
+        .route(
+          "/api/v1/dogemap-feed/inscriptions/:inscription_id/body",
+          get(Self::dogemap_feed_body),
+        )
+        .route(
+          "/api/v1/dogemap-feed/locations",
+          get(Self::dogemap_feed_locations),
+        )
         .route(
           "/api/v1/drc20/operations",
           get(Self::drc20_transaction_decisions),
@@ -444,6 +467,7 @@ impl Server {
         .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
+        .layer(Extension(Arc::new(dogemap_feed::FeedState::default())))
         .layer(Extension(page_config))
         .layer(Extension(Arc::new(config)))
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -2853,28 +2877,9 @@ impl Server {
     Self::inscriptions_inner(page_config, index, None).await
   }
 
-  // IMPLEMENTATION-HANDOFF [P-01] FEED-HTTP; P-C01..03/P-C05/P-C07, P-F01.
-  // This handler walks latest inscription numbers, resolves delegates, and
-  // opens separate reads for tip/items/locations; inventory_complete=true is
-  // not a proof that a particular historical block has no Dogemap candidates.
-  // 1. Keep this consumer route compatible; wire PROPOSED new handlers into
-  //    Self::run's Router for /api/v1/dogemap-feed/capabilities,
-  //    /api/v1/dogemap-feed/blocks/:height, and
-  //    /api/v1/dogemap-feed/inscriptions/:inscription_id/body. P-02 is required.
-  // 2. Call one P-01 Index snapshot method per request. Validate exact height,
-  //    blockHash, databaseId, reorgEpoch and bounded opaque cursor; return
-  //    typed 409 for a replaced snapshot, 503 for unknown/unavailable coverage,
-  //    and never []/complete=true on missing history, malformed data or lag.
-  // 3. Serve intrinsic body bytes using a same-origin immutable body reference
-  //    and digest when too large to inline. Do not route protocol ingestion
-  //    through /content (delegation/hidden content) or arbitrary remote URLs.
-  // 4. Terminal complete=true requires retained block manifest, all event
-  //    ordinals, exact total/hash, and coverage including requested height;
-  //    a zero-event block needs the same proof. Preserve rate/page/byte bounds.
-  // 5. PROPOSED dogemap-feed-contract HTTP tests must interleave index commit,
-  //    reorg, body reads and page requests; assert 409/503 rather than false
-  //    negatives, plus existing route parity. See feed-contract.md for fields,
-  //    work-packages.md P-01 for commands/network/release/rollback; not run yet.
+  // A live newest-first inventory, not a historical block feed: the Dogemap
+  // feed (/api/v1/dogemap-feed/*, server/dogemap_feed.rs) answers per block
+  // from one read transaction with coverage, identity and typed errors.
   async fn inscription_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
@@ -3107,21 +3112,9 @@ impl Server {
  * is still behind the chain tip, so its coverage is reported stale rather
  * than complete. The plan lives in the handoff bundle, not here.
  */
-  // IMPLEMENTATION-HANDOFF [P-01] FEED-CAPABILITIES; P-C01/P-C05, P-F05.
-  // Current count/hash/flags come from separate reads; this response has no
-  // feed coverage, database generation, parser identity or recoverable epoch.
-  // 1. Leave existing fields compatible. The new feed capabilities handler
-  //    must read its watermark/hash and Statistic::Reorgs in one Rtx, expose
-  //    databaseId/feedVersion/providerCommit/parserProfile/orderProfile/schema,
-  //    network+genesisHash, coverageFromHeight and explicit readiness.
-  // 2. Report feed indexedCheckpoint independently of the ordinary index tip;
-  //    block_count is height+1, while an unindexed checkpoint is null. Do not
-  //    invent height zero, infer network from a port, or claim history on upgrade.
-  // 3. Mark rollback/unrecoverable state, gaps and body/storage unavailability
-  //    truthfully. P-02 owns durable manifests/coverage and existing reorg counter.
-  // 4. In PROPOSED dogemap-feed-contract assert before-first-block null state,
-  //    retained height versus tip, restored databaseId/epoch mismatch, and
-  //    healthy legacy API serialization. Full commands: work-packages.md P-01.
+  // The Dogemap feed has its own capabilities route with feed identity,
+  // coverage and readiness read from one transaction; this document keeps
+  // its existing fields.
   async fn index_capabilities(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,

@@ -37,36 +37,30 @@ use crate::templates::BlockHashAndConfirmations;
 pub(crate) use self::entry::DuneEntry;
 
 pub(crate) mod entry;
+mod dogemap_feed;
 mod reorg;
 mod fetcher;
 mod rtx;
 mod updater;
 
+pub(crate) use self::dogemap_feed::{
+  FeedBlockCache, FeedBlockRequest, FeedBodyRequest, FeedFailure,
+};
+
 #[cfg(test)]
 pub(crate) mod testing;
 
-// IMPLEMENTATION-HANDOFF [P-02] FEED-STORAGE; P-C02/P-C04/P-C05, P-F02/P-F06.
-// Schema 6 retains current satpoints and inscription reveal txids, but no full
-// creation/transfer event journal or historical complete-block manifests.
-// 1. Add PROPOSED src/index/dogemap_feed.rs and additive redb tables for a
-//    versioned feed identity, immutable block manifests, ordered events,
-//    intrinsic body objects and coverage ranges. Wire module/open paths here;
-//    do not derive prior ownership from today's INSCRIPTION_ID_TO_SATPOINT.
-// 2. Use (profile, height, blockHash, eventOrdinal) identity and a checked
-//    event schema. Persist block events, manifest/hash and contiguous watermark
-//    in the same updater write transaction as HEIGHT_TO_BLOCK_HASH (P-02).
-// 3. Initialize existing databases as no feed coverage. A bounded historical
-//    projection replay through the same qualified provider logic must fill
-//    required gaps from the self-hosted archival node, verify anchors, and
-//    reconcile locations before coverage advances; current rows cannot backfill
-//    overwritten transfer history. Reuse the serving authority, no duplicate.
-// 4. Keep feed schema version separate for additive changes. Prove old binary
-//    rollback cannot advertise stale feed data; require explicit migration if
-//    any existing table/parse outcome changes. Never delete a production index.
-// 5. PROPOSED dogemap-feed-contract covers upgraded/empty DB, crash-before-commit,
-//    replay overlap/idempotency, duplicate blocks, gap coverage and restore.
-//    Sources P-S01/P-S03; dependency P-03 parser qualification and I-01 rules.
-//    Commands, staging/replay resource gates and rollback: work-packages.md P-02.
+// The Dogemap feed adds two tables to schema 6 without changing any existing
+// one, so the schema number stays 6 and an older binary can still open the
+// database (it ignores the tables; a savepoint restore it performs rolls them
+// back with everything else, and this binary then restarts the journal range
+// instead of claiming coverage across the gap). DOGEMAP_FEED_META holds the
+// generation id, creation coverage start and journal range;
+// DOGEMAP_FEED_JOURNAL holds per-block location records keyed by
+// (height, sequence). Creations are not stored: they are derived from the
+// inscription tables for any height. Transfer history before the journal
+// start cannot be derived from current rows and is reported as not
+// journaled rather than reconstructed. See index/dogemap_feed.rs.
 const SCHEMA_VERSION: u64 = 6;
 
 macro_rules! define_table {
@@ -112,10 +106,15 @@ define_table! { DRC20_INSCRIBE_TRANSFER, &InscriptionIdValue, &[u8] }
 define_table! { DRC20_TRANSFERABLELOG, &str, &[u8] }
 define_multimap_table! { DRC20_TOKEN_HOLDER, &str, &str}
 define_table! { DRC20_OPERATION_DECISIONS, &OperationDecisionKey, &[u8] }
+define_table! { DOGEMAP_FEED_META, &str, &[u8] }
+define_table! { DOGEMAP_FEED_JOURNAL, (u32, u32), &[u8] }
 
 pub(crate) struct Index {
   auth: Auth,
-  client: Client,
+  /// Rebuilt at the start of every index update when the node authenticates
+  /// with a cookie file, because Dogecoin Core writes a new cookie each time
+  /// it starts and a client built from the old one is answered with 401.
+  client: std::sync::RwLock<Client>,
   database: Database,
   path: PathBuf,
   first_inscription_height: u32,
@@ -413,7 +412,7 @@ impl Index {
     Ok(Self {
       genesis_block_coinbase_txid: genesis_block_coinbase_transaction.txid(),
       auth,
-      client,
+      client: std::sync::RwLock::new(client),
       database,
       path,
       first_inscription_height: options.first_inscription_height(),
@@ -435,7 +434,7 @@ impl Index {
     let mut utxos = BTreeMap::new();
     utxos.extend(
       self
-        .client
+        .client()
         .list_unspent(None, None, None, None, None)?
         .into_iter()
         .map(|utxo| {
@@ -453,12 +452,12 @@ impl Index {
     }
 
     for JsonOutPoint { txid, vout } in self
-      .client
+      .client()
       .call::<Vec<JsonOutPoint>>("listlockunspent", &[])?
     {
       utxos.insert(
         OutPoint { txid, vout },
-        Amount::from_sat(self.client.get_raw_transaction(&txid)?.output[vout as usize].value),
+        Amount::from_sat(self.client().get_raw_transaction(&txid)?.output[vout as usize].value),
       );
     }
     let rtx = self.database.begin_read()?;
@@ -651,6 +650,8 @@ impl Index {
  * reference tests; the plan lives in the handoff bundle, not here.
  */
   pub(crate) fn update(&self) -> Result {
+    self.refresh_rpc_client();
+
     let mut updater = Updater::new(self)?;
 
     loop {
@@ -675,6 +676,32 @@ impl Index {
             };
           }
         }
+    }
+  }
+
+  pub(crate) fn client(&self) -> std::sync::RwLockReadGuard<'_, Client> {
+    self
+      .client
+      .read()
+      .unwrap_or_else(std::sync::PoisonError::into_inner)
+  }
+
+  /// Re-read the node's cookie. Dogecoin Core writes a fresh cookie whenever
+  /// it starts, so a client built before a node restart is answered with 401
+  /// until it is rebuilt. Credentials given in the RPC URL never change and
+  /// keep their client.
+  fn refresh_rpc_client(&self) {
+    if !matches!(self.auth, Auth::CookieFile(_)) {
+      return;
+    }
+    match Client::new(&self.rpc_url, self.auth.clone()) {
+      Ok(client) => {
+        *self
+          .client
+          .write()
+          .unwrap_or_else(std::sync::PoisonError::into_inner) = client;
+      }
+      Err(error) => log::warn!("keeping the previous RPC client: {error}"),
     }
   }
 
@@ -726,21 +753,10 @@ impl Index {
     self.begin_read()?.height()
   }
 
-  // IMPLEMENTATION-HANDOFF [P-01] FEED-READ; P-C01/P-C02/P-C05, P-F01/P-F05.
-  // Each wrapper here opens its own redb read; chaining them cannot bind a
-  // capability/page/body response to a single committed database state.
-  // 1. Add PROPOSED Index::dogemap_feed_snapshot using one begin_read and
-  //    Rtx helpers for identity, retained watermark, block manifest/events,
-  //    intrinsic body descriptor and Statistic::Reorgs. Do not nest public
-  //    getters that begin another read or fetch mutable RPC state mid-response.
-  // 2. Validate cursor/request against that same snapshot and P-02 manifest;
-  //    enforce coverage, bounded reads and hash/ordinal integrity before return.
-  //    Supply current durable epoch so a recoverable rollback invalidates
-  //    old cursors even if the provider has caught up to the same height.
-  // 3. PROPOSED tests/dogemap_feed_contract.rs must race reads with commits and
-  //    rollback and compare pages against a single read reference. Acceptance:
-  //    internally consistent page or typed 409/503, never mixed checkpoint/data.
-  //    See feed-contract.md and work-packages.md P-01; tests not implemented.
+  // Each wrapper here opens its own read transaction, so chaining them can mix
+  // committed states. The Dogemap feed does not use them: every feed response
+  // reads identity, checkpoint and data from one transaction in
+  // index/dogemap_feed.rs.
   pub(crate) fn block_count(&self) -> Result<u32> {
     self.begin_read()?.block_count()
   }
@@ -1167,11 +1183,11 @@ impl Index {
   }
 
   pub(crate) fn block_header(&self, hash: BlockHash) -> Result<Option<BlockHeader>> {
-    self.client.get_block_header(&hash).into_option()
+    self.client().get_block_header(&hash).into_option()
   }
 
   pub(crate) fn block_header_info(&self, hash: BlockHash) -> Result<Option<GetBlockHeaderResult>> {
-    self.client.get_block_header_info(&hash).into_option()
+    self.client().get_block_header_info(&hash).into_option()
   }
 
   pub(crate) fn get_block_by_height(&self, height: u32) -> Result<Option<Block>> {
@@ -1185,10 +1201,10 @@ impl Index {
 
     Ok(
       self
-        .client
+        .client()
         .get_block_hash(height.into())
         .into_option()?
-        .map(|hash| self.client.get_block(&hash))
+        .map(|hash| self.client().get_block(&hash))
         .transpose()?,
     )
   }
@@ -1210,7 +1226,7 @@ impl Index {
       return Ok(None);
     }
 
-    self.client.get_block(&hash).into_option()
+    self.client().get_block(&hash).into_option()
   }
 
   pub(crate) fn get_drc20_balances(&self, script_key: &ScriptKey) -> Result<Vec<Balance>> {
@@ -1602,7 +1618,7 @@ impl Index {
       }
     }
 
-    if let Ok(tx) = self.client.get_raw_transaction(&txid) {
+    if let Ok(tx) = self.client().get_raw_transaction(&txid) {
       Ok(Some(tx))
     } else {
       Ok(None)
@@ -1617,7 +1633,7 @@ impl Index {
     &self,
     txid: Txid,
   ) -> Result<Option<BlockHashAndConfirmations>> {
-    if let Ok(result) = self.client.get_raw_transaction_info(&txid) {
+    if let Ok(result) = self.client().get_raw_transaction_info(&txid) {
       Ok(Some(BlockHashAndConfirmations {
         hash: result.blockhash,
         confirmations: result.confirmations,
@@ -1630,7 +1646,7 @@ impl Index {
   pub(crate) fn is_transaction_in_active_chain(&self, txid: Txid) -> Result<bool> {
     Ok(
       self
-        .client
+        .client()
         .get_raw_transaction_info(&txid)
         .into_option()?
         .and_then(|info| info.in_active_chain)

@@ -1,4 +1,5 @@
 use crate::drc20::operation::{Action, InscriptionOp};
+use crate::index::dogemap_feed::{self, JournalRecorder};
 use crate::inscription::ParsedInscription;
 use crate::sat::Sat;
 use crate::sat_point::SatPoint;
@@ -7,6 +8,8 @@ use super::*;
 
 pub(super) struct Flotsam {
   txid: Txid,
+  /// Position of `txid` in its block.
+  tx_index: u32,
   inscription_id: InscriptionId,
   offset: u64,
   old_satpoint: SatPoint,
@@ -44,6 +47,11 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   timestamp: u32,
   value_cache: &'a mut HashMap<OutPoint, OutPointMapValue>,
   chain: Chain,
+  /// The transaction whose outputs are being assigned and its block position.
+  current_txid: Txid,
+  current_tx_index: u32,
+  /// Dogemap feed journal rows for this block.
+  pub(super) journal: JournalRecorder,
 }
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
@@ -102,6 +110,9 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       timestamp,
       value_cache,
       chain,
+      current_txid: Txid::all_zeros(),
+      current_tx_index: 0,
+      journal: JournalRecorder::default(),
     })
   }
 
@@ -109,9 +120,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     &mut self,
     tx: &Transaction,
     txid: Txid,
+    tx_index: u32,
     input_sat_ranges: Option<&VecDeque<(u64, u64)>>,
   ) -> Result<u64> {
     let mut inscriptions = Vec::new();
+    self.current_txid = txid;
+    self.current_tx_index = tx_index;
 
     if self.index_transactions {
       tx.consensus_encode(&mut self.transaction_buffer)
@@ -133,6 +147,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
             let (old_satpoint, inscription_id) = result?;
             inscriptions.push(Flotsam {
               txid,
+              tx_index,
               offset: input_value + old_satpoint.offset,
               old_satpoint,
               inscription_id,
@@ -188,25 +203,16 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       }
     }
 
-    // IMPLEMENTATION-HANDOFF [P-03] PARSER-CONTINUATION; P-C06/P-C07, P-F04.
-    // Current lookup keys partials by previous txid, not vout, starts parsing
-    // only if no old inscription has offset zero, assigns origin txid+i0,
-    // and numbers new entries when final output locations are processed.
-    // 1. Reconcile this behavior with I-01's pinned profile using raw split/
-    //    single reveal races, nonzero/sibling vout, mixed inputs and existing
-    //    inscriptions at offset zero. Treat normative compatibility as
-    //    unresolved; do not "fix" these choices by importing Bitcoin rules.
-    // 2. Record first reveal and completion transaction coordinates into P-02
-    //    before mutable partial rows disappear. Keep parser association,
-    //    per-profile inscription index, event order and location settlement
-    //    distinct; sequence_number=0 cannot order Dogemap competing claims.
-    // 3. If evidence requires outpoint-keyed continuations or other changes,
-    //    migrate versioned projection state and replay affected coverage;
-    //    preserve existing DRC-20/Dunes consumers until their regressions pass.
-    // 4. PROPOSED dogemap-parser-compatibility tests must prove no sibling
-    //    continuation confusion, deterministic partial restart/reorg and
-    //    fee-to-coinbase ordering. Commands and evidence decision rule:
-    //    docs/preparation-dogemap/work-packages.md P-03; tests not run yet.
+    // Profile doginals-trac-1.0.2-compat-v1 continuation rules, kept exactly
+    // because every indexed inscription was decided by them: a new envelope
+    // is parsed only when no existing inscription sits at input offset zero;
+    // a partial chain is keyed by the previous txid of input 0, whatever its
+    // vout, so any output of a partial reveal continues it (the first spender
+    // processed wins); the id is the first reveal's txid with index 0; the
+    // number is assigned when the completed inscription's location is
+    // written, in block processing order. The first reveal's block is not
+    // stored; the feed reads it from the node for multipart creations.
+    // Vectors: tests/dogemap_parser_compatibility.rs.
     if inscriptions.iter().all(|flotsam| flotsam.offset != 0) {
       let previous_txid = tx.input[0].previous_output.txid;
       let previous_vout = tx.input[0].previous_output.vout;
@@ -290,6 +296,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
           inscriptions.push(Flotsam {
             txid,
+            tx_index,
             inscription_id: og_inscription_id,
             offset: 0,
             old_satpoint: SatPoint {
@@ -392,32 +399,18 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     }
   }
 
-  // IMPLEMENTATION-HANDOFF [P-02] FEED-EVENTS; P-C02/P-C03/P-C04, P-F02/P-F06.
-  // This function overwrites current location and collects only transient ops;
-  // prior script/value/offset and completion coordinates are not a history API.
-  // 1. Thread a feed recorder/context from Updater::index_block here and at
-  //    input consumption. Capture old output script bytes/value/offset before
-  //    removal, resolved new output bytes/value/offset, spending/reveal tx
-  //    coordinates and lost-output state; address decoding is optional display.
-  // 2. For Origin::New retain intrinsic body/type bytes, delegate marker,
-  //    original reveal coordinates plus completion coordinates and immutable
-  //    id/number. entry.height currently means completion, sequence_number=0;
-  //    neither proves the elected protocol claim order (P-03/I-01).
-  // 3. Finalize every movement, including same-block chains, multiple
-  //    inscriptions/output and fees carried to coinbase/lost sats, without
-  //    using a later mutable output lookup. Missing historical data must block
-  //    completeness rather than synthesize owner/address or transfer events.
-  // 4. P-02 commits records/manifests atomically and P-01 serves them. Add
-  //    PROPOSED dogemap-feed-contract fixtures for these cases and assert
-  //    replayed checkpoint ownership equals authoritative state. Regress
-  //    drc20-decisions and inscription-json. Exact commands/migration/rollback
-  //    live in docs/preparation-dogemap/work-packages.md P-02; not run yet.
+  /// Move an inscription to `new_satpoint`, an output of `tx` (the coinbase
+  /// for a fee) or the lost range, and record the move in the Dogemap feed
+  /// journal: the destination script and value are read from `tx` here,
+  /// before a later transaction of the block can move the inscription again.
+  /// A creation is journaled only when its body passes the candidate
+  /// prefilter; every other move is a transfer record.
   fn update_inscription_location(
     &mut self,
     input_sat_ranges: Option<&VecDeque<(u64, u64)>>,
     flotsam: Flotsam,
     new_satpoint: SatPoint,
-    _tx: &Transaction // hack
+    tx: &Transaction,
   ) -> Result {
     let inscription_id = flotsam.inscription_id.store();
 
@@ -494,6 +487,33 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           old_satpoint: flotsam.old_satpoint,
           new_satpoint: Some(Entry::load(new_satpoint)),
         });
+
+    let destination = dogemap_feed::destination(tx, _satpoint)?;
+    match &flotsam.origin {
+      Origin::Old(_) => {
+        let inscription_number = self
+          .id_to_entry
+          .get(&inscription_id)?
+          .map(|entry| InscriptionEntry::load(entry.value()).inscription_number);
+        self.journal.transfer(
+          flotsam.inscription_id,
+          inscription_number,
+          flotsam.old_satpoint,
+          destination,
+          self.current_txid,
+          self.current_tx_index,
+        );
+      }
+      Origin::New { inscription, .. } => self.journal.creation(
+        inscription,
+        flotsam.inscription_id,
+        self.next_number - 1,
+        flotsam.old_satpoint,
+        destination,
+        flotsam.txid,
+        flotsam.tx_index,
+      ),
+    }
 
     self.satpoint_to_id.insert(&new_satpoint, &inscription_id)?;
     self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
