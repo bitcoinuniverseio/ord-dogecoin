@@ -5,6 +5,10 @@ use {
 
 pub(crate) struct Rtx(pub(crate) redb::ReadTransaction);
 
+// The Dogemap feed's snapshot readers take the redb read transaction directly
+// (index/dogemap_feed.rs): identity, Statistic::Reorgs, the checkpoint, the
+// creation run and the journal rows of one response all share its root, and
+// it is dropped before any node RPC call.
 impl Rtx {
   pub(crate) fn height(&self) -> Result<Option<Height>> {
     Ok(

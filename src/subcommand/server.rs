@@ -59,6 +59,7 @@ use {
 use crate::drc20::token_info::{ExtendedTokenInfo, HolderBalanceForTick, HoldersInfoForTick};
 use crate::templates::{DRC20Balance, DRC20Output, DRC20UtxoOutput};
 
+mod dogemap_feed;
 mod error;
 mod query;
 
@@ -170,6 +171,12 @@ struct InscriptionInventoryQuery {
 #[derive(Deserialize)]
 struct Drc20InventoryQuery {
   cursor: Option<String>,
+  limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct Drc20TransferableQuery {
+  cursor: Option<u64>,
   limit: Option<usize>,
 }
 
@@ -302,6 +309,12 @@ const DUNE_INDEX_ABSENT: &str =
 
 impl Server {
   pub(crate) fn run(self, options: Options, index: Arc<Index>, handle: Handle) -> SubcommandResult {
+    // The Dogemap feed identifies its network by genesis hash; refuse a node
+    // or an index from another network before serving anything, and create
+    // the feed generation id before the index thread takes the writer.
+    index.dogemap_feed_check_network()?;
+    index.dogemap_feed_initialize()?;
+
     Runtime::new()?.block_on(async {
       let index_clone = index.clone();
 
@@ -352,6 +365,22 @@ impl Server {
           get(Self::drc20_transferable_inventory),
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
+        .route(
+          "/api/v1/dogemap-feed/capabilities",
+          get(Self::dogemap_feed_capabilities),
+        )
+        .route(
+          "/api/v1/dogemap-feed/blocks/:height",
+          get(Self::dogemap_feed_block),
+        )
+        .route(
+          "/api/v1/dogemap-feed/inscriptions/:inscription_id/body",
+          get(Self::dogemap_feed_body),
+        )
+        .route(
+          "/api/v1/dogemap-feed/locations",
+          get(Self::dogemap_feed_locations),
+        )
         .route(
           "/api/v1/drc20/operations",
           get(Self::drc20_transaction_decisions),
@@ -438,6 +467,7 @@ impl Server {
         .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
+        .layer(Extension(Arc::new(dogemap_feed::FeedState::default())))
         .layer(Extension(page_config))
         .layer(Extension(Arc::new(config)))
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -2847,6 +2877,9 @@ impl Server {
     Self::inscriptions_inner(page_config, index, None).await
   }
 
+  // A live newest-first inventory, not a historical block feed: the Dogemap
+  // feed (/api/v1/dogemap-feed/*, server/dogemap_feed.rs) answers per block
+  // from one read transaction with coverage, identity and typed errors.
   async fn inscription_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
@@ -2946,6 +2979,7 @@ impl Server {
   async fn drc20_transferable_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
+    Query(query): Query<Drc20TransferableQuery>,
   ) -> ServerResult<Response> {
     let block_count = index.block_count()?;
     let block_hash = index
@@ -2954,7 +2988,29 @@ impl Server {
     let mut blocks = HashMap::<u32, Block>::new();
     let mut transferables = Vec::new();
 
-    for transferable in index.get_drc20_transferables()? {
+    // Without `limit` or `cursor` the whole inventory is served oldest first,
+    // exactly as before. On mainnet that is far larger than any consumer can
+    // accept in one response, so a paged request walks it newest first by
+    // inscription number (genesis order) and materializes only its own page.
+    // The cursor is the last inscription number returned; numbers are unique,
+    // so a page can neither repeat nor skip a transferable at one height.
+    let paged = query.limit.is_some() || query.cursor.is_some();
+    let mut logs = index.get_drc20_transferables()?;
+    let mut next_cursor = None;
+    if paged {
+      let limit = checked_inventory_limit(query.limit)
+        .map_err(|message| ServerError::BadRequest(message.to_string()))?;
+      if let Some(cursor) = query.cursor {
+        logs.retain(|log| log.inscription_number < cursor);
+      }
+      logs.sort_unstable_by_key(|log| std::cmp::Reverse(log.inscription_number));
+      if logs.len() > limit {
+        logs.truncate(limit);
+        next_cursor = logs.last().map(|log| log.inscription_number.to_string());
+      }
+    }
+
+    for transferable in logs {
       let token = index
         .get_drc20_token_info(&transferable.tick)?
         .ok_or_not_found(|| format!("DRC-20 token {}", transferable.tick))?;
@@ -3023,13 +3079,15 @@ impl Server {
       });
     }
 
-    transferables.sort_by(|left, right| {
-      left
-        .genesis_height
-        .cmp(&right.genesis_height)
-        .then(left.transaction_index.cmp(&right.transaction_index))
-        .then(left.inscription_index.cmp(&right.inscription_index))
-    });
+    if !paged {
+      transferables.sort_by(|left, right| {
+        left
+          .genesis_height
+          .cmp(&right.genesis_height)
+          .then(left.transaction_index.cmp(&right.transaction_index))
+          .then(left.inscription_index.cmp(&right.inscription_index))
+      });
+    }
 
     Ok(
       Json(Drc20TransferableInventory {
@@ -3038,6 +3096,7 @@ impl Server {
         block_hash: block_hash.to_string(),
         inventory_complete: true,
         transferables,
+        next_cursor: paged.then_some(next_cursor),
       })
       .into_response(),
     )
@@ -3053,6 +3112,9 @@ impl Server {
  * is still behind the chain tip, so its coverage is reported stale rather
  * than complete. The plan lives in the handoff bundle, not here.
  */
+  // The Dogemap feed has its own capabilities route with feed identity,
+  // coverage and readiness read from one transaction; this document keeps
+  // its existing fields.
   async fn index_capabilities(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
@@ -3634,6 +3696,7 @@ impl Server {
   async fn funding_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
+    Extension(feed): Extension<Arc<dogemap_feed::FeedState>>,
     Path(address): Path<String>,
     Query(query): Query<FundingInventoryQuery>,
   ) -> ServerResult<Response> {
@@ -3660,6 +3723,8 @@ impl Server {
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
       .ok_or_not_found(|| "indexed chain tip")?;
+    let inventory_complete =
+      crate::authority_api::funding_inventory_complete(feed.node_tip(&index), block_count);
     let mut candidates = Vec::new();
 
     for outpoint in index.get_account_outputs(canonical_address.clone())? {
@@ -3720,7 +3785,7 @@ impl Server {
         block_count,
         block_hash: block_hash.to_string(),
         address: canonical_address,
-        inventory_complete: true,
+        inventory_complete,
         total_count,
         truncated,
         inputs: candidates,
