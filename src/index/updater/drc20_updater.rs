@@ -787,7 +787,7 @@ impl<'a, 'db, 'tx> Drc20Updater<'a, 'tx> {
         {
             consensus::encode::deserialize(transaction.value())?
         } else {
-            self.index.client
+            self.index.client()
                 .get_raw_transaction(&satpoint.outpoint.txid)
                 .map_err(|error| anyhow!("{}: {error}", missing()))?
         };

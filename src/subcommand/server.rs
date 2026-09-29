@@ -59,6 +59,7 @@ use {
 use crate::drc20::token_info::{ExtendedTokenInfo, HolderBalanceForTick, HoldersInfoForTick};
 use crate::templates::{DRC20Balance, DRC20Output, DRC20UtxoOutput};
 
+mod dogemap_feed;
 mod error;
 mod query;
 
@@ -308,6 +309,12 @@ const DUNE_INDEX_ABSENT: &str =
 
 impl Server {
   pub(crate) fn run(self, options: Options, index: Arc<Index>, handle: Handle) -> SubcommandResult {
+    // The Dogemap feed identifies its network by genesis hash; refuse a node
+    // or an index from another network before serving anything, and create
+    // the feed generation id before the index thread takes the writer.
+    index.dogemap_feed_check_network()?;
+    index.dogemap_feed_initialize()?;
+
     Runtime::new()?.block_on(async {
       let index_clone = index.clone();
 
@@ -358,6 +365,22 @@ impl Server {
           get(Self::drc20_transferable_inventory),
         )
         .route("/api/v1/capabilities", get(Self::index_capabilities))
+        .route(
+          "/api/v1/dogemap-feed/capabilities",
+          get(Self::dogemap_feed_capabilities),
+        )
+        .route(
+          "/api/v1/dogemap-feed/blocks/:height",
+          get(Self::dogemap_feed_block),
+        )
+        .route(
+          "/api/v1/dogemap-feed/inscriptions/:inscription_id/body",
+          get(Self::dogemap_feed_body),
+        )
+        .route(
+          "/api/v1/dogemap-feed/locations",
+          get(Self::dogemap_feed_locations),
+        )
         .route(
           "/api/v1/drc20/operations",
           get(Self::drc20_transaction_decisions),
@@ -444,6 +467,7 @@ impl Server {
         .route("/blockhash/:height", get(Self::blockhash_at_height))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
+        .layer(Extension(Arc::new(dogemap_feed::FeedState::default())))
         .layer(Extension(page_config))
         .layer(Extension(Arc::new(config)))
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -2853,6 +2877,9 @@ impl Server {
     Self::inscriptions_inner(page_config, index, None).await
   }
 
+  // A live newest-first inventory, not a historical block feed: the Dogemap
+  // feed (/api/v1/dogemap-feed/*, server/dogemap_feed.rs) answers per block
+  // from one read transaction with coverage, identity and typed errors.
   async fn inscription_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
@@ -3085,6 +3112,9 @@ impl Server {
  * is still behind the chain tip, so its coverage is reported stale rather
  * than complete. The plan lives in the handoff bundle, not here.
  */
+  // The Dogemap feed has its own capabilities route with feed identity,
+  // coverage and readiness read from one transaction; this document keeps
+  // its existing fields.
   async fn index_capabilities(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
@@ -3666,6 +3696,7 @@ impl Server {
   async fn funding_inventory(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
+    Extension(feed): Extension<Arc<dogemap_feed::FeedState>>,
     Path(address): Path<String>,
     Query(query): Query<FundingInventoryQuery>,
   ) -> ServerResult<Response> {
@@ -3692,6 +3723,8 @@ impl Server {
     let block_hash = index
       .block_hash(block_count.checked_sub(1))?
       .ok_or_not_found(|| "indexed chain tip")?;
+    let inventory_complete =
+      crate::authority_api::funding_inventory_complete(feed.node_tip(&index), block_count);
     let mut candidates = Vec::new();
 
     for outpoint in index.get_account_outputs(canonical_address.clone())? {
@@ -3752,7 +3785,7 @@ impl Server {
         block_count,
         block_hash: block_hash.to_string(),
         address: canonical_address,
-        inventory_complete: true,
+        inventory_complete,
         total_count,
         truncated,
         inputs: candidates,

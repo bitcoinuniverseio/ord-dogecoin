@@ -46,3 +46,18 @@ and reports that height as `drc20DecisionsFromHeight` on
 Operations below that height stay `outside-decision-coverage`; they are
 never inferred from an inscription's `drc-20` marker or from today's
 balances. See `docs/src/dogecoin/http-api.md`.
+
+The Dogemap provider feed (`/api/v1/dogemap-feed/*`, wire contract
+`dogemap-feed-v1`) serves per-block Doginals creations and transfers to
+dogemap-indexer. It adds two tables to schema 6, `DOGEMAP_FEED_META` and
+`DOGEMAP_FEED_JOURNAL`, written in the same write transaction as each block
+and rolled back with it on a reorg; no existing table or parse outcome
+changes, so an existing database needs no rebuild and transfers are journaled
+from the first block the upgraded binary indexes. The inscription parser is
+pinned as profile `doginals-trac-1.0.2-compat-v1`, including its historical
+PUSHDATA2/PUSHDATA4 length handling; `ord dogemap-pushdata-audit` measures
+where Dogecoin Core's push decoding would differ. The build embeds the source
+commit (`git rev-parse HEAD`, or `UNIVERSE_PROVIDER_COMMIT`) as the feed's
+`providerCommit`. Dogecoin Core has no signet, so `--signet` is rejected, and
+`ord server` refuses a node or index whose genesis does not match the
+configured network.
