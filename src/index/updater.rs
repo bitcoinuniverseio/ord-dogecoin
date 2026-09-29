@@ -20,6 +20,9 @@ mod inscription_updater;
 /// Headers fetched per batched RPC call below the first inscription height.
 const HEADER_BATCH: u32 = 1000;
 
+/// Blocks per write transaction while only headers are indexed.
+const HEADER_ONLY_COMMIT_INTERVAL: u32 = 25_000;
+
 pub(crate) struct BlockData {
   pub(crate) header: BlockHeader,
   pub(crate) txdata: Vec<(Transaction, Txid)>,
@@ -124,7 +127,19 @@ impl<'index> Updater<'_> {
 
       uncommitted += 1;
 
-      if uncommitted == 1000 {
+      // Header-only blocks below the first inscription height write a few
+      // bytes each, so committing them every 1000 blocks spends most of a
+      // fresh index's time in fsync. They commit every
+      // HEADER_ONLY_COMMIT_INTERVAL blocks; savepoints are only taken near the
+      // node tip, where blocks carry inscriptions and commit every 1000.
+      let commit_interval =
+        if !self.index.index_sats && self.height < self.index.first_inscription_height {
+          HEADER_ONLY_COMMIT_INTERVAL
+        } else {
+          1000
+        };
+
+      if uncommitted >= commit_interval {
         self.commit(wtx, value_cache)?;
         value_cache = HashMap::new();
         uncommitted = 0;
