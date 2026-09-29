@@ -447,6 +447,25 @@ impl<'index> Updater<'_> {
       return Err(anyhow!("Previous block did not consume all input values"));
     };
 
+    // A header-only block (below the first inscription height, without the
+    // sat index, outside dune indexing) changes nothing but its block hash
+    // and the feed journal range; the general path below would open two
+    // dozen tables to write that. Genesis takes the general path, so every
+    // table exists from the first committed block as before.
+    if self.height > 0
+      && block.txdata.is_empty()
+      && !index.index_sats
+      && self.height < index.first_inscription_height
+      && !(index.index_dunes && self.height >= index.first_dune_height)
+    {
+      dogemap_feed::record_block(wtx, self.height, Vec::new(), index.first_inscription_height)?;
+      wtx
+        .open_table(HEIGHT_TO_BLOCK_HASH)?
+        .insert(&self.height, &block.header.block_hash().store())?;
+      self.height += 1;
+      return Ok(());
+    }
+
     let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
     let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
     let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
