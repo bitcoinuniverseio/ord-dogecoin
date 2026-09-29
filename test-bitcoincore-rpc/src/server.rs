@@ -45,6 +45,10 @@ impl Api for Server {
   }
 
   fn get_blockchain_info(&self) -> Result<GetBlockchainInfoResult, jsonrpc_core::Error> {
+    let (height, tip) = {
+      let state = self.state();
+      (state.hashes.len() - 1, *state.hashes.last().unwrap())
+    };
     Ok(GetBlockchainInfoResult {
       chain: String::from(match self.network {
         Network::Bitcoin => "main",
@@ -52,9 +56,9 @@ impl Api for Server {
         Network::Signet => "signet",
         Network::Regtest => "regtest",
       }),
-      blocks: 0,
-      headers: 0,
-      best_block_hash: self.state().hashes[0],
+      blocks: height.try_into().unwrap(),
+      headers: height.try_into().unwrap(),
+      best_block_hash: tip,
       difficulty: 0.0,
       median_time: 0,
       verification_progress: 0.0,
@@ -141,11 +145,34 @@ impl Api for Server {
     }
   }
 
-  fn get_block(&self, block_hash: BlockHash, verbose: bool) -> Result<String, jsonrpc_core::Error> {
-    assert!(!verbose, "Verbosity level {verbose} is unsupported");
-    match self.state().blocks.get(&block_hash) {
-      Some(block) => Ok(hex::encode(serialize(block))),
-      None => Err(Self::not_found()),
+  fn get_block(
+    &self,
+    block_hash: BlockHash,
+    verbosity: Option<Value>,
+  ) -> Result<Value, jsonrpc_core::Error> {
+    let verbosity = match verbosity {
+      None | Some(Value::Bool(false)) => 0,
+      Some(Value::Bool(true)) => 1,
+      Some(Value::Number(n)) => n.as_u64().unwrap_or(u64::MAX),
+      Some(other) => panic!("unsupported getblock verbosity {other}"),
+    };
+    let state = self.state();
+    let Some(block) = state.blocks.get(&block_hash) else {
+      return Err(Self::not_found());
+    };
+    match verbosity {
+      0 => Ok(Value::String(hex::encode(serialize(block)))),
+      1 => {
+        let height = state.hashes.iter().position(|hash| *hash == block_hash);
+        Ok(serde_json::json!({
+          "hash": block_hash.to_string(),
+          "confirmations": height.map(|height| i64::try_from(state.hashes.len() - height).unwrap()).unwrap_or(-1),
+          "height": height,
+          "previousblockhash": block.header.prev_blockhash.to_string(),
+          "tx": block.txdata.iter().map(|tx| tx.txid().to_string()).collect::<Vec<String>>(),
+        }))
+      }
+      _ => panic!("unsupported getblock verbosity {verbosity}"),
     }
   }
 
@@ -340,12 +367,21 @@ impl Api for Server {
   ) -> Result<Value, jsonrpc_core::Error> {
     assert_eq!(blockhash, None, "Blockhash param is unsupported");
     if verbose.unwrap_or(false) {
-      match self.state().transactions.get(&txid) {
+      let state = self.state();
+      // The active-chain block that contains the transaction, as a txindex
+      // node reports it.
+      let block = state.hashes.iter().enumerate().rev().find(|(_, hash)| {
+        state.blocks[*hash]
+          .txdata
+          .iter()
+          .any(|tx| tx.txid() == txid)
+      });
+      match state.transactions.get(&txid) {
         Some(_) => Ok(
           serde_json::to_value(GetRawTransactionResult {
             in_active_chain: Some(true),
             hex: Vec::new(),
-            txid: Txid::all_zeros(),
+            txid,
             hash: Wtxid::all_zeros(),
             size: 0,
             vsize: 0,
@@ -353,8 +389,12 @@ impl Api for Server {
             locktime: 0,
             vin: Vec::new(),
             vout: Vec::new(),
-            blockhash: None,
-            confirmations: Some(1),
+            blockhash: block.map(|(_, hash)| *hash),
+            confirmations: Some(
+              block
+                .map(|(height, _)| u32::try_from(state.hashes.len() - height).unwrap())
+                .unwrap_or(0),
+            ),
             time: None,
             blocktime: None,
           })

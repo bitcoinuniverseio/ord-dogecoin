@@ -110,6 +110,7 @@ mod chain;
 mod config;
 mod decimal;
 mod deserialize_from_str;
+pub mod dogemap_feed;
 mod epoch;
 mod fee_rate;
 mod height;

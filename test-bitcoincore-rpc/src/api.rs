@@ -22,8 +22,14 @@ pub trait Api {
     verbose: bool,
   ) -> Result<Value, jsonrpc_core::Error>;
 
+  /// Verbosity `false`/`0` answers the raw block hex; `true`/`1` the
+  /// JSON summary with the transaction id list, as Dogecoin Core does.
   #[rpc(name = "getblock")]
-  fn get_block(&self, blockhash: BlockHash, verbose: bool) -> Result<String, jsonrpc_core::Error>;
+  fn get_block(
+    &self,
+    blockhash: BlockHash,
+    verbosity: Option<Value>,
+  ) -> Result<Value, jsonrpc_core::Error>;
 
   #[rpc(name = "getblockcount")]
   fn get_block_count(&self) -> Result<u64, jsonrpc_core::Error>;

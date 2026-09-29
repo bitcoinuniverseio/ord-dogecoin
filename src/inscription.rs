@@ -34,6 +34,15 @@ impl Inscription {
     }
   }
 
+  /// The parser profile `doginals-trac-1.0.2-compat-v1`: only `vin[0]`'s
+  /// scriptSig of each supplied transaction is read, a continuation is the
+  /// next transaction of the chain the updater keyed by previous txid, and
+  /// pushes are decoded by `InscriptionParser::decode_push_datas`, including
+  /// its historical PUSHDATA2/PUSHDATA4 length quirk. Every accepted
+  /// inscription in existing databases was decided by exactly this code, so
+  /// it must not change without a new profile and a replay; the Core-correct
+  /// decoder exists only for the `dogemap-pushdata-audit` diagnostic.
+  /// Vectors: tests/dogemap_parser_compatibility.rs.
   pub(crate) fn from_transactions(txs: Vec<Transaction>) -> ParsedInscription {
     let mut sig_scripts = Vec::with_capacity(txs.len());
     for i in 0..txs.len() {
@@ -43,6 +52,40 @@ impl Inscription {
       sig_scripts.push(txs[i].input[0].script_sig.clone());
     }
     InscriptionParser::parse(sig_scripts)
+  }
+
+  /// Parse the first transaction of a stored chain on its own and report how
+  /// many body bytes its pieces contributed. The whole chain's body starts
+  /// with exactly these bytes (the parser appends pieces and never removes
+  /// them), so a prefix longer than a length bound proves the complete body
+  /// exceeds it without reading the continuation transactions.
+  pub(crate) fn parse_first_part(tx: &Transaction) -> (ParsedInscription, usize) {
+    let Some(input) = tx.input.first() else {
+      return (ParsedInscription::None, 0);
+    };
+    InscriptionParser::parse_with(
+      std::slice::from_ref(&input.script_sig),
+      InscriptionParser::decode_push_datas,
+    )
+  }
+
+  /// The compat profile's outcome for these scriptSigs, as the index decides it.
+  pub(crate) fn parse_script_sigs_compat(sig_scripts: &[Script]) -> ParsedInscription {
+    InscriptionParser::parse_with(sig_scripts, InscriptionParser::decode_push_datas).0
+  }
+
+  /// The same envelope rules with Dogecoin Core's PUSHDATA2/PUSHDATA4 length
+  /// decoding. Diagnostic only; never used to index.
+  pub(crate) fn parse_script_sigs_strict(sig_scripts: &[Script]) -> ParsedInscription {
+    InscriptionParser::parse_with(sig_scripts, InscriptionParser::decode_push_datas_strict).0
+  }
+
+  pub(crate) fn decode_pushes_compat(script: &Script) -> Option<Vec<Vec<u8>>> {
+    InscriptionParser::decode_push_datas(script)
+  }
+
+  pub(crate) fn decode_pushes_strict(script: &Script) -> Option<Vec<Vec<u8>>> {
+    InscriptionParser::decode_push_datas_strict(script)
   }
 
   pub(crate) fn from_file(chain: Chain, path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -175,13 +218,27 @@ impl Inscription {
 
 struct InscriptionParser {}
 
+/// A push decoder: the compat decoder that decided every indexed inscription,
+/// or the Core-correct one used only for diagnostics.
+type PushDecoder = fn(&Script) -> Option<Vec<Vec<u8>>>;
+
 impl InscriptionParser {
   fn parse(sig_scripts: Vec<Script>) -> ParsedInscription {
-    let sig_script = &sig_scripts[0];
+    Self::parse_with(&sig_scripts, Self::decode_push_datas).0
+  }
 
-    let mut push_datas_vec = match Self::decode_push_datas(sig_script) {
+  /// The profile's envelope rules over `sig_scripts` with the given push
+  /// decoder. Besides the outcome it returns the number of body bytes that
+  /// had been assembled when the outcome was decided. An empty list is not an
+  /// inscription (it used to index out of bounds).
+  fn parse_with(sig_scripts: &[Script], decode: PushDecoder) -> (ParsedInscription, usize) {
+    let Some(sig_script) = sig_scripts.first() else {
+      return (ParsedInscription::None, 0);
+    };
+
+    let mut push_datas_vec = match decode(sig_script) {
       Some(push_datas) => push_datas,
-      None => return ParsedInscription::None,
+      None => return (ParsedInscription::None, 0),
     };
 
     let mut push_datas = push_datas_vec.as_slice();
@@ -189,24 +246,24 @@ impl InscriptionParser {
     // read protocol
 
     if push_datas.len() < 3 {
-      return ParsedInscription::None;
+      return (ParsedInscription::None, 0);
     }
 
     let protocol = &push_datas[0];
 
     if protocol != PROTOCOL_ID {
-      return ParsedInscription::None;
+      return (ParsedInscription::None, 0);
     }
 
     // read npieces
 
     let mut npieces = match Self::push_data_to_number(&push_datas[1]) {
       Some(n) => n,
-      None => return ParsedInscription::None,
+      None => return (ParsedInscription::None, 0),
     };
 
     if npieces == 0 {
-      return ParsedInscription::None;
+      return (ParsedInscription::None, 0);
     }
 
     // read content type
@@ -219,7 +276,7 @@ impl InscriptionParser {
 
     let mut body = vec![];
 
-    let mut sig_scripts = sig_scripts.as_slice();
+    let mut sig_scripts = sig_scripts;
 
     // loop over transactions
     loop {
@@ -242,13 +299,14 @@ impl InscriptionParser {
           }
 
           let delegate = Tag::Delegate.take(&mut fields);
+          let body_len = body.len();
           let inscription = Inscription {
             content_type: Some(content_type),
             body: Some(body),
             delegate,
           };
 
-          return ParsedInscription::Complete(inscription);
+          return (ParsedInscription::Complete(inscription), body_len);
         }
 
         if push_datas.len() < 2 {
@@ -271,33 +329,46 @@ impl InscriptionParser {
       }
 
       if sig_scripts.len() <= 1 {
-        return ParsedInscription::Partial;
+        return (ParsedInscription::Partial, body.len());
       }
 
       sig_scripts = &sig_scripts[1..];
 
-      push_datas_vec = match Self::decode_push_datas(&sig_scripts[0]) {
+      push_datas_vec = match decode(&sig_scripts[0]) {
         Some(push_datas) => push_datas,
-        None => return ParsedInscription::None,
+        None => return (ParsedInscription::None, body.len()),
       };
 
       if push_datas_vec.len() < 2 {
-        return ParsedInscription::None;
+        return (ParsedInscription::None, body.len());
       }
 
       let next = match Self::push_data_to_number(&push_datas_vec[0]) {
         Some(n) => n,
-        None => return ParsedInscription::None,
+        None => return (ParsedInscription::None, body.len()),
       };
 
       if next != npieces - 1 {
-        return ParsedInscription::None;
+        return (ParsedInscription::None, body.len());
       }
 
       push_datas = push_datas_vec.as_slice();
     }
   }
 
+  /// The compat push decoder (profile `doginals-trac-1.0.2-compat-v1`).
+  ///
+  /// PUSHDATA2 and PUSHDATA4 read their length from the opcode byte and the
+  /// following one (three) bytes instead of the following two (four)
+  /// little-endian bytes Dogecoin Core reads (findings P-F03). `4d0001` plus
+  /// 256 payload bytes is therefore a 77-byte push followed by an invalid
+  /// opcode, and `4e00010000` plus 256 bytes declares 65614 bytes and fails.
+  /// That quirk decided which historical scripts are inscriptions, so it is
+  /// kept exactly. Every length is bounds-checked before slicing, the only
+  /// allocations are copies of bytes present in the script, and the
+  /// PUSHDATA4 end offset is computed with checked arithmetic so a 32-bit
+  /// target rejects instead of wrapping; none of that changes an outcome on
+  /// the 64-bit targets that built existing databases.
   fn decode_push_datas(script: &Script) -> Option<Vec<Vec<u8>>> {
     let mut bytes = script.as_bytes();
     let mut push_datas = vec![];
@@ -319,7 +390,7 @@ impl InscriptionParser {
 
       // op_push 1-75
       if bytes[0] >= 1 && bytes[0] <= 75 {
-        let len = bytes[0] as usize;
+        let len = usize::from(bytes[0]);
         if bytes.len() < 1 + len {
           return None;
         }
@@ -333,7 +404,7 @@ impl InscriptionParser {
         if bytes.len() < 2 {
           return None;
         }
-        let len = bytes[1] as usize;
+        let len = usize::from(bytes[1]);
         if bytes.len() < 2 + len {
           return None;
         }
@@ -342,12 +413,12 @@ impl InscriptionParser {
         continue;
       }
 
-      // op_pushdata2
+      // op_pushdata2, historical length (bytes[1] << 8) + bytes[0]
       if bytes[0] == 77 {
         if bytes.len() < 3 {
           return None;
         }
-        let len = ((bytes[1] as usize) << 8) + ((bytes[0] as usize) << 0);
+        let len = (usize::from(bytes[1]) << 8) + usize::from(bytes[0]);
         if bytes.len() < 3 + len {
           return None;
         }
@@ -356,24 +427,68 @@ impl InscriptionParser {
         continue;
       }
 
-      // op_pushdata4
+      // op_pushdata4, historical length from bytes[3], bytes[2], bytes[1], bytes[0]
       if bytes[0] == 78 {
         if bytes.len() < 5 {
           return None;
         }
-        let len = ((bytes[3] as usize) << 24)
-          + ((bytes[2] as usize) << 16)
-          + ((bytes[1] as usize) << 8)
-          + ((bytes[0] as usize) << 0);
-        if bytes.len() < 5 + len {
+        let len = (usize::from(bytes[3]) << 24)
+          + (usize::from(bytes[2]) << 16)
+          + (usize::from(bytes[1]) << 8)
+          + usize::from(bytes[0]);
+        let end = 5usize.checked_add(len)?;
+        if bytes.len() < end {
           return None;
         }
-        push_datas.push(bytes[5..5 + len].to_vec());
-        bytes = &bytes[5 + len..];
+        push_datas.push(bytes[5..end].to_vec());
+        bytes = &bytes[end..];
         continue;
       }
 
       return None;
+    }
+
+    Some(push_datas)
+  }
+
+  /// Dogecoin Core's push decoding (`GetScriptOp`: the length follows the
+  /// opcode as LE16 or LE32 and the payload must be present) with the same
+  /// opcode policy as the compat decoder: only OP_0, OP_1..OP_16 and data
+  /// pushes are accepted and anything else rejects the script. Used only by
+  /// `ord dogemap-pushdata-audit`.
+  fn decode_push_datas_strict(script: &Script) -> Option<Vec<Vec<u8>>> {
+    let mut bytes = script.as_bytes();
+    let mut push_datas = vec![];
+
+    while let Some(&opcode) = bytes.first() {
+      let (header, len): (usize, usize) = match opcode {
+        0 => (1, 0),
+        81..=96 => {
+          push_datas.push(vec![opcode - 80]);
+          bytes = &bytes[1..];
+          continue;
+        }
+        1..=75 => (1, usize::from(opcode)),
+        76 => (2, usize::from(*bytes.get(1)?)),
+        77 => (
+          3,
+          usize::from(u16::from_le_bytes([*bytes.get(1)?, *bytes.get(2)?])),
+        ),
+        78 => (
+          5,
+          usize::try_from(u32::from_le_bytes([
+            *bytes.get(1)?,
+            *bytes.get(2)?,
+            *bytes.get(3)?,
+            *bytes.get(4)?,
+          ]))
+          .ok()?,
+        ),
+        _ => return None,
+      };
+      let end = header.checked_add(len)?;
+      push_datas.push(bytes.get(header..end)?.to_vec());
+      bytes = &bytes[end..];
     }
 
     Some(push_datas)
