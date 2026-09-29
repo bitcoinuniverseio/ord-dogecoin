@@ -20,12 +20,16 @@
     "dependsOn": [
       "P-02"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C01",
       "P-C02",
       "P-C03",
       "P-C04"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -51,13 +55,17 @@
     "dependsOn": [
       "P-02"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C01",
       "P-C02",
       "P-C03",
       "P-C05",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -76,10 +84,14 @@
     "dependsOn": [
       "P-02"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C01",
       "P-C05"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -103,11 +115,15 @@
     "dependsOn": [
       "P-03"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C02",
       "P-C04",
       "P-C05"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -130,11 +146,15 @@
     "dependsOn": [
       "P-02"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C01",
       "P-C02",
       "P-C05"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -157,11 +177,15 @@
     "dependsOn": [
       "P-02"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C01",
       "P-C02",
       "P-C05"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -186,13 +210,17 @@
     "dependsOn": [
       "P-03"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C02",
       "P-C03",
       "P-C04",
       "P-C05",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -213,11 +241,15 @@
     "dependsOn": [
       "P-03"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C02",
       "P-C03",
       "P-C04"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -239,10 +271,14 @@
     "dependsOn": [
       "P-03"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C05",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-feed-contract"
     ]
   },
   {
@@ -261,10 +297,14 @@
     "dependsOn": [
       "I-01"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C06",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-parser-compatibility"
     ]
   },
   {
@@ -283,10 +323,14 @@
     "dependsOn": [
       "I-01"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C06",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-parser-compatibility"
     ]
   },
   {
@@ -307,10 +351,14 @@
     "dependsOn": [
       "I-01"
     ],
-    "status": "ANNOTATED",
+    "status": "IMPLEMENTED",
     "requirementIds": [
       "P-C06",
       "P-C07"
+    ],
+    "implementation": "feat/dogemap-feed-20260929: marker replaced by a rationale comment",
+    "verifiedBy": [
+      "dogemap-parser-compatibility"
     ]
   }
 ]

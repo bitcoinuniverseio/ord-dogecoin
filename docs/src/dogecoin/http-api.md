@@ -328,6 +328,60 @@ Two warnings:
   appears here. Callers must apply their own reservations before treating an
   output as spendable. See [Reorgs and mempool](reorgs.md#mempool-there-isnt-one).
 
+### Dogemap provider feed (`/api/v1/dogemap-feed/*`)
+
+A loopback feed of Doginals creations and transfers per block for
+dogemap-indexer, wire contract `dogemap-feed-v1` (Dogemap contract v1,
+section 2). Every chain integer is a decimal string, every response carries
+the identity `chain`, `network`, `genesisHash`, `providerVersion`,
+`providerCommit` (the full commit embedded at build time, `unknown` when the
+build could not prove it), `parserProfile`
+(`doginals-trac-1.0.2-compat-v1`), `orderProfile`
+(`ord-dogecoin-inscription-number-v1`), `candidateFilter`
+(`dogemap-candidate-prefilter-v1`), `feedVersion`, `databaseSchema` (`6`),
+`databaseId` (random, created once per database) and `reorgEpoch` (the
+database's savepoint rollback count), and everything in one response is read
+from one redb read transaction.
+
+| Route | Answers |
+| --- | --- |
+| `GET /api/v1/dogemap-feed/capabilities` | Identity, `indexedCheckpoint`, `creationCoverageFromHeight`, `transferCoverageFromHeight`, `ready`, `unavailableReason`, `nodeHeight` and limits |
+| `GET /api/v1/dogemap-feed/blocks/{height}?blockHash&databaseId&reorgEpoch[&cursor][&limit]` | The block's events: creations passing the prefilter (body 1 to 64 bytes containing `.dogemap` in any case) by inscription number, then every journaled transfer in processing order, with `creationCount` (all creations), `totalEvents`, `eventsHash` and an opaque cursor; `limit` 1 to 500, default 100 |
+| `GET /api/v1/dogemap-feed/inscriptions/{id}/body?blockHash&databaseId&reorgEpoch[&offset][&length]` | Base64 chunks (at most 65536 bytes) of the intrinsic body; `blockHash` is the completion block |
+| `GET /api/v1/dogemap-feed/locations?ids=<id>,...` | Current location of up to 100 inscriptions |
+
+Creations are derived from the inscription tables for any height at or above
+`creationCoverageFromHeight`; transfers come from the location journal the
+updater writes in the block's own write transaction, from
+`transferCoverageFromHeight` on. A block below that height answers
+`scope.transfers: "not-journaled"` and creation `location: null`; it is never
+presented as a block without transfers. The journal starts at the first block
+this binary indexes, so an upgraded database needs no rebuild. `ready` is true
+when a checkpoint exists, the journal covers it, the node tip is at most three
+blocks ahead and the build commit is known.
+
+`eventsHash` is the lowercase SHA-256 of the RFC 8785 serialization of
+`{feedVersion, parserProfile, orderProfile, candidateFilter, network,
+genesisHash, height, blockHash, parentHash, scope, creationCount, events}` with
+`rawBody.bytes` and `rawBody.bodyRef` removed from every event. The shared
+test vector is `docs/contract/eventsHash-golden-v1.json` in the repository.
+
+Errors are `{"schemaVersion":"dogemap-feed-error-v1","error":{"code","message"},"correlationId"}`:
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `invalid_request`, `invalid_cursor` | A parameter outside its grammar or bounds, an unknown parameter, a malformed cursor |
+| 404 | `unknown_inscription` | The body route for an inscription the index does not have |
+| 409 | `snapshot_replaced` | `databaseId`, `reorgEpoch`, the block hash at the height, or a cursor's snapshot differs from the index |
+| 503 | `coverage_unavailable` | Height above the checkpoint or below creation coverage |
+| 503 | `content_unavailable` | Node RPC failure while completing a response, or index data that contradicts the feed invariants |
+
+`ord dogemap-pushdata-audit --from-height A --to-height B [--json]` reports,
+from the node, every input-0 scriptSig whose PUSHDATA2/PUSHDATA4 decoding
+differs between the compat parser (which reads the length from the opcode
+byte onward) and Dogecoin Core, with both parse outcomes. It never changes the
+index. Signet does not exist for Dogecoin; `--signet` is rejected.
+
 ### Errors
 
 | Status | When |
