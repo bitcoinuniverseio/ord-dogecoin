@@ -1,5 +1,5 @@
 use ord::authority_api::{
-  checked_funding_limit, checked_inventory_limit, checked_offset_cursor, Drc20DecisionCheckpoint,
+  checked_funding_limit, checked_inventory_limit, funding_inventory_complete, checked_offset_cursor, Drc20DecisionCheckpoint,
   Drc20AddressBalanceItem, Drc20AddressInventory, Drc20DecisionCoverage, Drc20HolderInventory,
   Drc20HolderInventoryItem, Drc20OperationDecision,
   Drc20TokenDetail, Drc20TokenInventory, Drc20TokenInventoryItem, Drc20TransactionDecisions,
@@ -16,6 +16,15 @@ fn bounds_inventory_pages() {
   assert_eq!(checked_inventory_limit(Some(1_000)), Ok(1_000));
   assert!(checked_inventory_limit(Some(0)).is_err());
   assert!(checked_inventory_limit(Some(1_001)).is_err());
+}
+
+#[test]
+fn funding_inventory_is_incomplete_while_catching_up() {
+  assert!(funding_inventory_complete(Some(100), 101));
+  assert!(funding_inventory_complete(Some(103), 101));
+  assert!(!funding_inventory_complete(Some(104), 101));
+  assert!(!funding_inventory_complete(Some(67_946_000), 10_900_000));
+  assert!(!funding_inventory_complete(None, 101));
 }
 
 #[test]

@@ -42,7 +42,7 @@ impl Reorg {
         for depth in 1..max_recoverable_reorg_depth {
           let index_block_hash = index.block_hash(height.checked_sub(depth))?;
           let bitcoind_block_hash = index
-            .client
+            .client()
             .get_block_hash(u64::from(height.saturating_sub(depth)))
             .into_option()?;
 
@@ -57,27 +57,70 @@ impl Reorg {
     }
   }
 
+  /// Restore the oldest savepoint. Every table, the Dogemap feed journal and
+  /// its journal range included, returns to the savepoint's contents, so the
+  /// feed serves the rolled-back chain exactly as it was then; the new value
+  /// of `Statistic::Reorgs` is the feed's `reorgEpoch` and invalidates every
+  /// earlier cursor. The feed's database id and creation coverage start are
+  /// the generation, not chain state, so they are carried across the restore.
   pub(crate) fn handle_reorg(index: &Index, height: u32, depth: u32) -> Result {
     log::info!("rolling back database after reorg of depth {depth} at height {height}");
 
-    let mut wtx = index.begin_write()?;
+    // Read from a separate read transaction: redb stages the root of every
+    // table opened in a write transaction when the handle is dropped, and
+    // restore_savepoint does not discard staged roots, so a table opened in
+    // `wtx` before the restore would keep its pre-restore contents.
+    let rtx = index.database.begin_read()?;
+    let feed_generation = dogemap_feed::preserve_meta(&rtx)?;
 
     // Read the rollback counter before the restore replaces every table with
     // the savepoint's contents, so the counter keeps growing across rollbacks
-    // instead of being reset to whatever the savepoint held.
-    let reorgs_before = wtx
+    // instead of being reset to whatever the savepoint held. It must come from
+    // the read transaction too: opening STATISTIC_TO_COUNT in `wtx` before the
+    // restore staged its pre-restore root, the commit kept pointing at pages
+    // the restored allocator treats as free, and later writes reused them
+    // (fault campaign 2026-09-29, S6: "STATISTIC_TO_COUNT is of type
+    // Table<[u8;44], [u8;36]>" and a panic inside a later restore_savepoint).
+    let reorgs_before = rtx
       .open_table(STATISTIC_TO_COUNT)?
       .get(&Statistic::Reorgs.key())?
       .map(|value| value.value())
       .unwrap_or(0);
+    drop(rtx);
 
-    let oldest_savepoint = wtx.get_persistent_savepoint(wtx.list_persistent_savepoints()?.min().unwrap())?;
+    let mut wtx = index.begin_write()?;
 
-    wtx.restore_savepoint(&oldest_savepoint)?;
+    // No savepoint, or one taken above the fork, cannot roll back this reorg:
+    // report it as unrecoverable (aborting `wtx` discards the restore) instead
+    // of panicking the index thread or restoring the same savepoint forever.
+    let Some(oldest) = wtx.list_persistent_savepoints()?.min() else {
+      log::warn!("no savepoint to roll back a reorg of depth {depth} at height {height}");
+      wtx.abort()?;
+      return Err(anyhow!(ReorgError::Unrecoverable));
+    };
+
+    wtx.restore_savepoint(&wtx.get_persistent_savepoint(oldest)?)?;
+
+    let restored_block_count = wtx
+      .open_table(HEIGHT_TO_BLOCK_HASH)?
+      .range(0..)?
+      .next_back()
+      .transpose()?
+      .map(|(height, _hash)| height.value() + 1)
+      .unwrap_or(0);
+    let first_replaced_height = height.saturating_sub(depth) + 1;
+    if restored_block_count > first_replaced_height {
+      log::warn!(
+        "oldest savepoint (block count {restored_block_count}) is above the fork of a reorg of depth {depth} at height {height}"
+      );
+      wtx.abort()?;
+      return Err(anyhow!(ReorgError::Unrecoverable));
+    }
 
     wtx
       .open_table(STATISTIC_TO_COUNT)?
       .insert(&Statistic::Reorgs.key(), &(reorgs_before + 1))?;
+    dogemap_feed::reinstate_meta(&wtx, feed_generation)?;
 
     Index::increment_statistic(&wtx, Statistic::Commits, 1)?;
     wtx.commit()?;
@@ -90,11 +133,21 @@ impl Reorg {
     Ok(())
   }
 
+  /// Whether the updater must commit after indexing up to block count
+  /// `height`, so that `update_savepoints` can take a savepoint there.
+  /// `starting_height` is the node's block count plus one when the update
+  /// began.
+  pub(crate) fn savepoint_due(height: u32, starting_height: u32) -> bool {
+    height >= SAVEPOINT_INTERVAL
+      && height % SAVEPOINT_INTERVAL == 0
+      && starting_height.saturating_sub(height) <= CHAIN_TIP_DISTANCE
+  }
+
   pub(crate) fn update_savepoints(index: &Index, height: u32) -> Result {
     if (height < SAVEPOINT_INTERVAL || height % SAVEPOINT_INTERVAL == 0)
       && u32::try_from(
       index
-          .client
+          .client()
           .get_block_count()?
         )
         .unwrap()
