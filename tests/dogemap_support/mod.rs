@@ -90,7 +90,8 @@ impl Chain {
     fs::write(&cookie, "user:password").unwrap();
 
     let mut epochs = BTreeMap::new();
-    for height in 0..500u32 {
+    // The updater reads a subsidy for every height, header-only ones too.
+    for height in 0..2_100u32 {
       epochs.insert(
         height.to_string(),
         if height == 0 {

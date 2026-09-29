@@ -711,18 +711,28 @@ fn pages_and_cursors_are_bound_to_one_snapshot() {
 
 #[test]
 fn heights_below_creation_coverage_are_unavailable_not_empty() {
+  // Headers below the first inscription height are fetched in batches of
+  // 1000; 1003 of them cross a batch boundary.
   let mut chain = Chain::new();
-  chain.args.push("--first-inscription-height=3".into());
-  chain.rpc.mine_blocks(4);
+  chain.args.push("--first-inscription-height=1003".into());
+  chain.rpc.mine_blocks(1004);
   let server = chain.serve();
-  let capabilities = server.wait_for_checkpoint(4);
-  assert_eq!(capabilities["creationCoverageFromHeight"], "3");
-  assert_eq!(capabilities["transferCoverageFromHeight"], "3");
+  let capabilities = server.wait_for_checkpoint(1004);
+  assert_eq!(capabilities["creationCoverageFromHeight"], "1003");
+  assert_eq!(capabilities["transferCoverageFromHeight"], "1003");
 
-  let (status, value) = server.block(2, &chain.block_hash(2), "");
+  let (status, value) = server.block(1002, &chain.block_hash(1002), "");
   assert_error(status, &value, 503, "coverage_unavailable");
-  let (status, value) = server.block(3, &chain.block_hash(3), "");
+  let (status, value) = server.block(1003, &chain.block_hash(1003), "");
   assert_eq!(status, 200, "{value}");
+  // The batched headers were indexed under their own hashes.
+  assert_eq!(value["parentHash"], chain.block_hash(1002));
+  for height in [0, 999, 1000, 1001] {
+    let (status, value) = server.block(height, &chain.block_hash(height), "");
+    assert_error(status, &value, 503, "coverage_unavailable");
+  }
+  let (_, text) = server.get("/blockhash/999").unwrap();
+  assert_eq!(text, chain.block_hash(999));
 }
 
 #[test]
