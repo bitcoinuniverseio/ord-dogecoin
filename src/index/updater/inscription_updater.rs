@@ -188,6 +188,25 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       }
     }
 
+    // IMPLEMENTATION-HANDOFF [P-03] PARSER-CONTINUATION; P-C06/P-C07, P-F04.
+    // Current lookup keys partials by previous txid, not vout, starts parsing
+    // only if no old inscription has offset zero, assigns origin txid+i0,
+    // and numbers new entries when final output locations are processed.
+    // 1. Reconcile this behavior with I-01's pinned profile using raw split/
+    //    single reveal races, nonzero/sibling vout, mixed inputs and existing
+    //    inscriptions at offset zero. Treat normative compatibility as
+    //    unresolved; do not "fix" these choices by importing Bitcoin rules.
+    // 2. Record first reveal and completion transaction coordinates into P-02
+    //    before mutable partial rows disappear. Keep parser association,
+    //    per-profile inscription index, event order and location settlement
+    //    distinct; sequence_number=0 cannot order Dogemap competing claims.
+    // 3. If evidence requires outpoint-keyed continuations or other changes,
+    //    migrate versioned projection state and replay affected coverage;
+    //    preserve existing DRC-20/Dunes consumers until their regressions pass.
+    // 4. PROPOSED dogemap-parser-compatibility tests must prove no sibling
+    //    continuation confusion, deterministic partial restart/reorg and
+    //    fee-to-coinbase ordering. Commands and evidence decision rule:
+    //    docs/preparation-dogemap/work-packages.md P-03; tests not run yet.
     if inscriptions.iter().all(|flotsam| flotsam.offset != 0) {
       let previous_txid = tx.input[0].previous_output.txid;
       let previous_vout = tx.input[0].previous_output.vout;
@@ -373,6 +392,26 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     }
   }
 
+  // IMPLEMENTATION-HANDOFF [P-02] FEED-EVENTS; P-C02/P-C03/P-C04, P-F02/P-F06.
+  // This function overwrites current location and collects only transient ops;
+  // prior script/value/offset and completion coordinates are not a history API.
+  // 1. Thread a feed recorder/context from Updater::index_block here and at
+  //    input consumption. Capture old output script bytes/value/offset before
+  //    removal, resolved new output bytes/value/offset, spending/reveal tx
+  //    coordinates and lost-output state; address decoding is optional display.
+  // 2. For Origin::New retain intrinsic body/type bytes, delegate marker,
+  //    original reveal coordinates plus completion coordinates and immutable
+  //    id/number. entry.height currently means completion, sequence_number=0;
+  //    neither proves the elected protocol claim order (P-03/I-01).
+  // 3. Finalize every movement, including same-block chains, multiple
+  //    inscriptions/output and fees carried to coinbase/lost sats, without
+  //    using a later mutable output lookup. Missing historical data must block
+  //    completeness rather than synthesize owner/address or transfer events.
+  // 4. P-02 commits records/manifests atomically and P-01 serves them. Add
+  //    PROPOSED dogemap-feed-contract fixtures for these cases and assert
+  //    replayed checkpoint ownership equals authoritative state. Regress
+  //    drc20-decisions and inscription-json. Exact commands/migration/rollback
+  //    live in docs/preparation-dogemap/work-packages.md P-02; not run yet.
   fn update_inscription_location(
     &mut self,
     input_sat_ranges: Option<&VecDeque<(u64, u64)>>,

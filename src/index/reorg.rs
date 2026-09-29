@@ -57,6 +57,22 @@ impl Reorg {
     }
   }
 
+  // IMPLEMENTATION-HANDOFF [P-02] FEED-REORG; P-C05/P-C07, P-F02/P-F05.
+  // This revision already preserves/increments Statistic::Reorgs around the
+  // savepoint restore. Reuse it for P-01 reorgEpoch; do not add another counter.
+  // 1. Include feed manifests/events/coverage in the restored redb state, then
+  //    expose restored watermark+new epoch atomically. Drop detached block
+  //    availability and make old page/body cursors fail with typed 409.
+  // 2. Persist/rotate databaseId on rebuild or external restore; an older
+  //    backup cannot silently reuse a consumer's generation. Hold readiness
+  //    false while integrity/coverage reconciliation is incomplete.
+  // 3. PROPOSED dogemap-feed-contract must restore while paging, reapply same
+  //    height on another fork, remove partial-reveal completion and transfers,
+  //    restart after restore, and verify no stale owner/negative decisions in
+  //    dogemap-indexer I-05. Beyond savepoints, stop claims with unavailable
+  //    state; never clear unrecoverably_reorged just to resume the consumer.
+  // 4. Preserve existing DRC-20/Dunes rollback behavior. See work-packages.md
+  //    P-02 for test commands and coordinated rollback; no reorg induced here.
   pub(crate) fn handle_reorg(index: &Index, height: u32, depth: u32) -> Result {
     log::info!("rolling back database after reorg of depth {depth} at height {height}");
 

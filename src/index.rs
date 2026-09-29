@@ -45,6 +45,28 @@ mod updater;
 #[cfg(test)]
 pub(crate) mod testing;
 
+// IMPLEMENTATION-HANDOFF [P-02] FEED-STORAGE; P-C02/P-C04/P-C05, P-F02/P-F06.
+// Schema 6 retains current satpoints and inscription reveal txids, but no full
+// creation/transfer event journal or historical complete-block manifests.
+// 1. Add PROPOSED src/index/dogemap_feed.rs and additive redb tables for a
+//    versioned feed identity, immutable block manifests, ordered events,
+//    intrinsic body objects and coverage ranges. Wire module/open paths here;
+//    do not derive prior ownership from today's INSCRIPTION_ID_TO_SATPOINT.
+// 2. Use (profile, height, blockHash, eventOrdinal) identity and a checked
+//    event schema. Persist block events, manifest/hash and contiguous watermark
+//    in the same updater write transaction as HEIGHT_TO_BLOCK_HASH (P-02).
+// 3. Initialize existing databases as no feed coverage. A bounded historical
+//    projection replay through the same qualified provider logic must fill
+//    required gaps from the self-hosted archival node, verify anchors, and
+//    reconcile locations before coverage advances; current rows cannot backfill
+//    overwritten transfer history. Reuse the serving authority, no duplicate.
+// 4. Keep feed schema version separate for additive changes. Prove old binary
+//    rollback cannot advertise stale feed data; require explicit migration if
+//    any existing table/parse outcome changes. Never delete a production index.
+// 5. PROPOSED dogemap-feed-contract covers upgraded/empty DB, crash-before-commit,
+//    replay overlap/idempotency, duplicate blocks, gap coverage and restore.
+//    Sources P-S01/P-S03; dependency P-03 parser qualification and I-01 rules.
+//    Commands, staging/replay resource gates and rollback: work-packages.md P-02.
 const SCHEMA_VERSION: u64 = 6;
 
 macro_rules! define_table {
@@ -704,6 +726,21 @@ impl Index {
     self.begin_read()?.height()
   }
 
+  // IMPLEMENTATION-HANDOFF [P-01] FEED-READ; P-C01/P-C02/P-C05, P-F01/P-F05.
+  // Each wrapper here opens its own redb read; chaining them cannot bind a
+  // capability/page/body response to a single committed database state.
+  // 1. Add PROPOSED Index::dogemap_feed_snapshot using one begin_read and
+  //    Rtx helpers for identity, retained watermark, block manifest/events,
+  //    intrinsic body descriptor and Statistic::Reorgs. Do not nest public
+  //    getters that begin another read or fetch mutable RPC state mid-response.
+  // 2. Validate cursor/request against that same snapshot and P-02 manifest;
+  //    enforce coverage, bounded reads and hash/ordinal integrity before return.
+  //    Supply current durable epoch so a recoverable rollback invalidates
+  //    old cursors even if the provider has caught up to the same height.
+  // 3. PROPOSED tests/dogemap_feed_contract.rs must race reads with commits and
+  //    rollback and compare pages against a single read reference. Acceptance:
+  //    internally consistent page or typed 409/503, never mixed checkpoint/data.
+  //    See feed-contract.md and work-packages.md P-01; tests not implemented.
   pub(crate) fn block_count(&self) -> Result<u32> {
     self.begin_read()?.block_count()
   }

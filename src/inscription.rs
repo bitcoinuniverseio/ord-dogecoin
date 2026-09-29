@@ -34,6 +34,25 @@ impl Inscription {
     }
   }
 
+  // IMPLEMENTATION-HANDOFF [P-03] PARSER-PROFILE; P-C06/P-C07, P-F04.
+  // Verified at ab2934f3: only vin[0].scriptSig from each supplied transaction
+  // is parsed. This is reference behavior, not an established Dogemap rule.
+  // 1. Use the pinned source register and I-01 rule decision to name/version
+  //    the accepted Doginals parser and ordering profile. Resolve multi-input,
+  //    continuation-spend and malformed-envelope cases with fixed raw-tx
+  //    vectors before changing parser acceptance or publishing feed coverage.
+  // 2. Preserve origin/completion coordinates and exact intrinsic bytes for
+  //    P-02; P-01 must advertise profile+database identity. Never silently
+  //    extend envelope discovery to other inputs or import Bitcoin witness
+  //    semantics. An unsupported candidate is unavailable, not a valid negative.
+  // 3. Add PROPOSED tests/dogemap_parser_compatibility.rs target
+  //    dogemap-parser-compatibility; execute production parsing/indexing path.
+  //    The lib target has test=false, so merely adding private unit tests would
+  //    not prove they run. Pin expected results independently of this code.
+  // 4. Test split reveals, vin1 envelope, sibling previous vout, malformed
+  //    pushes, reorg during partial assembly and fee ordering. Replay/profile
+  //    change and all affected legacy consumer regression gates are in
+  //    work-packages.md P-03; ambiguity remains BLOCKED until evidenced.
   pub(crate) fn from_transactions(txs: Vec<Transaction>) -> ParsedInscription {
     let mut sig_scripts = Vec::with_capacity(txs.len());
     for i in 0..txs.len() {
@@ -298,6 +317,25 @@ impl InscriptionParser {
     }
   }
 
+  // IMPLEMENTATION-HANDOFF [P-03] PARSER-PUSHDATA; P-C06/P-C07, P-F03.
+  // Verified defect: PUSHDATA2 includes opcode bytes[0] in length and omits
+  // bytes[2]; PUSHDATA4 likewise includes opcode and omits bytes[4].
+  // Dogecoin Core P-S02 GetOp2 reads the following 2/4 length bytes little
+  // endian. Example 4d0001 + 256 payload bytes should consume 256, not 77.
+  // 1. In the elected P-03 profile, decode length from bytes[1..3]/[1..5]
+  //    with checked conversion/bounds; preserve opcode policy separately.
+  //    Avoid allocation/slicing until the entire declared payload fits.
+  // 2. Pin the compatibility/profile version and quantify changed parse
+  //    outcomes before historical replay; never reinterpret a live database
+  //    under the old profile label. I-01 decides Dogemap rules, not this fix.
+  // 3. PROPOSED dogemap-parser-compatibility must cover 75/76/255/256/520-byte
+  //    boundary pushes, explicit PUSHDATA4, short length fields, truncated or
+  //    oversized payload, trailing opcodes, and exact returned body bytes.
+  //    Compare against Core serialization and pinned raw Doginals vectors,
+  //    then regress inscription-json and existing affected protocol paths.
+  // 4. Command after registering test: cargo +1.96.0 test --locked --test
+  //    dogemap-parser-compatibility (new/unrun). Replay and rollback cautions:
+  //    docs/preparation-dogemap/work-packages.md P-03 and findings.md P-F03.
   fn decode_push_datas(script: &Script) -> Option<Vec<Vec<u8>>> {
     let mut bytes = script.as_bytes();
     let mut push_datas = vec![];

@@ -609,6 +609,25 @@ impl<'index> Updater<'_> {
       }
     }
 
+    // IMPLEMENTATION-HANDOFF [P-02] FEED-COMMIT; P-C02..05/P-C07, P-F02/P-F06.
+    // InscriptionUpdater.operations is transient and consumed for DRC-20 only;
+    // the block hash is persisted without any complete Doginals event manifest.
+    // 1. Retain creation/transfer events from the shared updater for every
+    //    inscription-enabled block, independently of index_drc20/index_dunes.
+    //    Collect before operations are consumed; preserve existing consumers.
+    // 2. Pass original block transaction coordinates into the qualified parser
+    //    and event recorder. Finalize fee-to-coinbase locations before closing
+    //    a block, but assign dense eventOrdinal by I-01/P-03 orderProfile, not
+    //    HashMap iteration, current number, or coinbase processing position.
+    // 3. Write the full ordered events, intrinsic bodies, zero-event manifest,
+    //    exact parent/hash/count/digest and contiguous coverage in this same
+    //    wtx as the block hash. Any parse/store/RPC integrity error aborts it.
+    //    P-02 storage/backfill must never publish a gap as an empty block.
+    // 4. PROPOSED dogemap-feed-contract asserts create+transfer in one block,
+    //    multiple inputs, fee/lost outputs, DRC-20 off, duplicate replay and
+    //    crash before commit. Regress drc20-decisions + inscription-json.
+    //    No schema/backfill execution in preparation; work-packages.md P-02
+    //    defines tests, staging safety, acceptance and reversible rollout.
     height_to_block_hash.insert(&self.height, &block.header.block_hash().store())?;
 
     self.height += 1;
