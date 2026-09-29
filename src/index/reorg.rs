@@ -60,16 +60,22 @@ impl Reorg {
   pub(crate) fn handle_reorg(index: &Index, height: u32, depth: u32) -> Result {
     log::info!("rolling back database after reorg of depth {depth} at height {height}");
 
-    let mut wtx = index.begin_write()?;
-
     // Read the rollback counter before the restore replaces every table with
     // the savepoint's contents, so the counter keeps growing across rollbacks
-    // instead of being reset to whatever the savepoint held.
-    let reorgs_before = wtx
+    // instead of being reset to whatever the savepoint held. Read it from a
+    // separate read transaction: in redb 2.6.3 a table opened in the write
+    // transaction before `restore_savepoint` stages its pre-restore root,
+    // which the commit then applies over the restored one, so
+    // STATISTIC_TO_COUNT (LostSats and the rest) would not roll back.
+    let reorgs_before = index
+      .database
+      .begin_read()?
       .open_table(STATISTIC_TO_COUNT)?
       .get(&Statistic::Reorgs.key())?
       .map(|value| value.value())
       .unwrap_or(0);
+
+    let mut wtx = index.begin_write()?;
 
     let oldest_savepoint = wtx.get_persistent_savepoint(wtx.list_persistent_savepoints()?.min().unwrap())?;
 
