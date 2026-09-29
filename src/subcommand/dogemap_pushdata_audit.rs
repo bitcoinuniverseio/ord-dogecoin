@@ -106,7 +106,13 @@ impl DogemapPushdataAudit {
       Chain::Regtest => "regtest",
       Chain::Signet => "signet",
     };
-    let chain = client.get_blockchain_info()?.chain;
+    // Read untyped: Dogecoin Core 1.14 reports `softforks` as a list, which
+    // the RPC crate's typed Bitcoin result cannot decode.
+    let info: serde_json::Value = client.call("getblockchaininfo", &[])?;
+    let chain = info["chain"]
+      .as_str()
+      .ok_or_else(|| anyhow!("getblockchaininfo has no chain"))?
+      .to_owned();
     ensure!(
       chain == expected_chain,
       "Dogecoin Core reports chain {chain}, but ord runs on {network}"
