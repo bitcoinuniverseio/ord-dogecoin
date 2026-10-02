@@ -30,6 +30,8 @@ jobs:
     runs-on: [self-hosted, universe-runners-1]
 
     steps:
+    - name: Provide universe host tools
+      uses: bitcoinuniverseio/universe-ci-actions/universe-host-tools@b11554bde3a933e23a7651654a930ad21ca8b369
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
     - name: Install Rust Toolchain Components
