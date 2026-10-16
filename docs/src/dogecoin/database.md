@@ -2,7 +2,7 @@ Database model
 ==============
 
 There is one file. `index.redb` is an embedded
-[redb](https://github.com/cberner/redb) key-value store, version 2.4.0, holding
+[redb](https://github.com/cberner/redb) key-value store, version 2.6.3, holding
 every table below. There is no external database, no schema migration tool, and
 no way to add a feature to an existing file.
 
@@ -21,7 +21,7 @@ key and checked on every open:
 There is no in-place upgrade path. A schema bump means a rebuild, or restoring
 a snapshot built at the new version.
 
-The redb major version matters too: this build uses redb 2.4.0, which is not
+The redb major version matters too: this build uses redb 2.6.3, which is not
 file-compatible with databases written by `wonky-ord` builds on older redb
 releases.
 

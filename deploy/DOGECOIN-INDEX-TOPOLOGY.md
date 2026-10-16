@@ -1,3 +1,10 @@
+# Historical Dogecoin topology
+
+The September topology below is historical. For the restored host layout,
+archive preservation rules, and recovery/readiness gates, use
+[the archive recovery runbook](DOGECOIN-ARCHIVE-RECOVERY.md).
+It does not establish a completed deployment or current readiness.
+
 # Dogecoin index topology (since 2026-09-16)
 
 One shared Dogecoin Core, two ord indexes, three hosts. No third-party data.
