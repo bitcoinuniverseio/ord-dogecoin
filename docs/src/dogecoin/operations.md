@@ -1,6 +1,11 @@
 Operations
 ==========
 
+For the restored archive owner and its immutable backing file, see
+[`deploy/DOGECOIN-ARCHIVE-RECOVERY.md`](https://github.com/bitcoinuniverseio/ord-dogecoin/blob/develop/deploy/DOGECOIN-ARCHIVE-RECOVERY.md).
+That runbook distinguishes archive recovery, catch-up, tip readiness, and
+historical coverage. Do not apply older host layouts to the restored owner.
+
 Health checks
 -------------
 
