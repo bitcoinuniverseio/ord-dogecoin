@@ -7354,9 +7354,65 @@ pub(super) async fn tap_get_privilege_authority_event_by_priv_col_block(
 }
 
 
+/// Trac reader getSyncStatus: the indexed fraction of the node's chain, 1 only
+/// when this index has every block the Dogecoin node has.
+pub(super) async fn tap_get_sync_status(
+  Extension(index): Extension<Arc<Index>>,
+) -> ServerResult<Json<serde_json::Value>> {
+  task::block_in_place(|| {
+    let indexed = u64::from(index.block_count()?);
+    let node = index
+      .client()
+      .get_block_count()
+      .map_err(|err| anyhow!("node block count: {err}"))?
+      + 1;
+    let status = if indexed >= node {
+      1.0
+    } else {
+      indexed as f64 / node as f64
+    };
+    Ok(Json(serde_json::json!({ "result": status })))
+  })
+}
+
+/// Block witness for Core's TAP-DOGE readiness (Core reads it at the reader
+/// origin's /v1/checkpoint): the indexed tip, its hash, and the lag behind the
+/// Dogecoin node this index follows.
+pub(super) async fn tap_checkpoint(
+  Extension(index): Extension<Arc<Index>>,
+) -> ServerResult<Json<serde_json::Value>> {
+  task::block_in_place(|| {
+    let count = index.block_count()?;
+    let height = count.checked_sub(1).ok_or_else(|| anyhow!("index is empty"))?;
+    let block_hash = index
+      .block_hash(Some(height))?
+      .ok_or_else(|| anyhow!("no block hash at indexed height {height}"))?;
+    let node_height = index
+      .client()
+      .get_block_count()
+      .map_err(|err| anyhow!("node block count: {err}"))?;
+    let lag = node_height.saturating_sub(u64::from(height));
+    Ok(Json(serde_json::json!({
+      "checkpoint": {
+        "chain": "dogecoin",
+        "network": "mainnet",
+        "height": height,
+        "heightAtomic": height.to_string(),
+        "blockHash": block_hash.to_string(),
+      },
+      "source": { "height": node_height, "heightAtomic": node_height.to_string() },
+      "lagBlocks": lag,
+      "lagBlocksAtomic": lag.to_string(),
+      "observedAt": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+    })))
+  })
+}
+
 /// The base router with every /r/tap/* reader route.
 pub(super) fn tap_reader_router() -> Router {
   Router::new()
+    .route("/v1/checkpoint", get(tap_checkpoint))
+    .route("/r/tap/getSyncStatus", get(tap_get_sync_status))
     .route("/r/tap/getBitmap/:bitmap_block", get(tap_get_bitmap))
     .route("/r/tap/getBitmapByInscription/:inscription", get(tap_get_bitmap_by_inscription))
     .route("/r/tap/getBitmapWalletHistoricListLength/:address", get(tap_get_bitmap_wallet_historic_list_length))
