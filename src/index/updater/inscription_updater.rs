@@ -116,6 +116,8 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   #[cfg(feature = "tap")]
   pub(super) btc_network: bitcoin::Network,
   #[cfg(feature = "tap")]
+  pub(super) tap_index: &'a Index,
+  #[cfg(feature = "tap")]
   pub(super) profile: bool,
   #[cfg(feature = "tap")]
   pub(super) delegate_cache: HashMap<InscriptionId, bool>,
@@ -300,6 +302,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     value_cache: &'a mut HashMap<OutPoint, OutPointMapValue>,
     chain: Chain,
     #[cfg(feature = "tap")] tap_kv: &'a mut Table<'tx, &'static [u8], &'static [u8]>,
+    #[cfg(feature = "tap")] tap_index: &'a Index,
   ) -> Result<Self> {
     let next_number = number_to_id
       .iter()?
@@ -357,6 +360,8 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       block_availability_cache: HashMap::new(),
       #[cfg(feature = "tap")]
       btc_network: chain.network(),
+      #[cfg(feature = "tap")]
+      tap_index,
       #[cfg(feature = "tap")]
       profile: false,
       #[cfg(feature = "tap")]
@@ -893,6 +898,65 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         });
 
     let destination = dogemap_feed::destination(tx, _satpoint)?;
+
+    // TAP-DOGE hooks (ord-tap parity): owner "-" and value 0 for an inscription
+    // lost to fees, "-" for an OP_RETURN output, else the output's address.
+    #[cfg(feature = "tap")]
+    {
+      let (owner_address, output_value_sat, op_return) = match &destination {
+        dogemap_feed::JournalDestination::Assigned {
+          value,
+          script_pubkey,
+          ..
+        } => {
+          let script = Script::from(script_pubkey.clone());
+          if script.is_op_return() {
+            ("-".to_string(), *value, true)
+          } else {
+            (
+              self
+                .chain
+                .address_from_script(&script)
+                .map(|address| address.to_string())
+                .unwrap_or_else(|_| "-".to_string()),
+              *value,
+              false,
+            )
+          }
+        }
+        dogemap_feed::JournalDestination::Lost { .. } => ("-".to_string(), 0, false),
+      };
+      let index = self.tap_index;
+      match &flotsam.origin {
+        Origin::Old(old_satpoint) => self.tap_on_inscription_transferred(
+          flotsam.inscription_id,
+          0,
+          *old_satpoint,
+          _satpoint,
+          op_return,
+          &owner_address,
+          output_value_sat,
+        ),
+        Origin::New { fee, inscription } => self.tap_on_inscription_created(
+          flotsam.inscription_id,
+          0,
+          i32::try_from(self.next_number - 1).unwrap_or(i32::MAX),
+          _satpoint,
+          inscription,
+          &[],
+          false,
+          false,
+          false,
+          false,
+          false,
+          op_return,
+          *fee,
+          &owner_address,
+          output_value_sat,
+          index,
+        ),
+      }
+    }
     match &flotsam.origin {
       Origin::Old(_) => {
         let inscription_number = self
