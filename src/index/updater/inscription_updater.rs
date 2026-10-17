@@ -117,6 +117,10 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   pub(super) btc_network: bitcoin::Network,
   #[cfg(feature = "tap")]
   pub(super) tap_index: &'a Index,
+  /// Lean replay: outpoints whose values were requested from the fetcher this
+  /// block, consumed in request order.
+  #[cfg(feature = "tap")]
+  pub(super) tap_prefetched: HashSet<OutPoint>,
   #[cfg(feature = "tap")]
   pub(super) profile: bool,
   #[cfg(feature = "tap")]
@@ -363,6 +367,8 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       #[cfg(feature = "tap")]
       tap_index,
       #[cfg(feature = "tap")]
+      tap_prefetched: HashSet::new(),
+      #[cfg(feature = "tap")]
       profile: false,
       #[cfg(feature = "tap")]
       delegate_cache: HashMap::new(),
@@ -546,6 +552,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       self.transaction_buffer.clear();
     }
 
+    // Lean replay: only a transaction that moves, creates or continues an
+    // inscription needs its input values; others are skipped (they only feed
+    // the fee total behind the offset of an inscription lost to fees).
+    #[cfg(feature = "tap")]
+    let lean_relevant = !self.tap_index.tap_lean || self.tap_lean_tx_relevant(tx)?;
+
     let mut input_value = 0;
     for tx_in in &tx.input {
       if tx_in.previous_output.is_null() {
@@ -602,12 +614,33 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           }
           map.value()
         } else {
-          self.value_receiver.blocking_recv().ok_or_else(|| {
-            anyhow!(
-              "failed to get transaction for {}",
-              tx_in.previous_output.txid
-            )
-          })?
+          #[cfg(feature = "tap")]
+          let from_fetcher =
+            !self.tap_index.tap_lean || self.tap_prefetched.remove(&tx_in.previous_output);
+          #[cfg(not(feature = "tap"))]
+          let from_fetcher = true;
+
+          if from_fetcher {
+            self.value_receiver.blocking_recv().ok_or_else(|| {
+              anyhow!(
+                "failed to get transaction for {}",
+                tx_in.previous_output.txid
+              )
+            })?
+          } else {
+            #[cfg(feature = "tap")]
+            {
+              if lean_relevant {
+                Self::tap_fetch_output_value(self.tap_index, tx_in.previous_output)?
+              } else {
+                0
+              }
+            }
+            #[cfg(not(feature = "tap"))]
+            {
+              unreachable!()
+            }
+          }
         }
       }
     }
