@@ -635,11 +635,22 @@ impl<'index> Updater<'_> {
         .iter()
         .map(|(_, txid)| txid)
         .collect::<HashSet<_>>();
-      for (tx, _) in &block.txdata {
+      // Relevance also flows forward within the block: a transaction spending
+      // an output of an earlier relevant one may receive its inscription, so
+      // its other inputs are prefetched too instead of fetched one by one.
+      #[cfg(feature = "tap")]
+      let mut relevant_in_block: HashSet<Txid> = HashSet::new();
+      for (tx, tx_txid) in &block.txdata {
         #[cfg(feature = "tap")]
         if let Some((satpoints, partials)) = &lean_tables {
-          let mut relevant = false;
+          let mut relevant = tx
+            .input
+            .iter()
+            .any(|input| relevant_in_block.contains(&input.previous_output.txid));
           for input in &tx.input {
+            if relevant {
+              break;
+            }
             if !input.previous_output.is_null()
               && Index::inscriptions_on_output(satpoints, input.previous_output)?
                 .next()
@@ -652,6 +663,7 @@ impl<'index> Updater<'_> {
           if !relevant && !InscriptionUpdater::tap_lean_may_inscribe(partials, tx)? {
             continue;
           }
+          relevant_in_block.insert(*tx_txid);
         }
         for input in &tx.input {
           let prev_output = input.previous_output;
