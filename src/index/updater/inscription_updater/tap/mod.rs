@@ -7,6 +7,10 @@ pub(super) mod routes;
 // Shared TAP constants and helpers live here and are re-exported by parent.
 
 // --- TAP feature gating (laddered block heights; mainnet values) ---
+// Dogecoin TAP heights (doge-tap-protocol-specs).
+pub(crate) const DOGE_TAP_DOGEMAP_START_HEIGHT: u32 = 4_771_259;
+pub(crate) const DOGE_TAP_FULL_TICKER_HEIGHT: u32 = 5_487_639;
+pub(crate) const DOGE_TAP_DMT_PRECISE_HEIGHT: u32 = 5_497_100;
 pub(crate) const TAP_BITMAP_START_HEIGHT: u32 = 779_832; // mainnet
 pub(crate) const TAP_START_HEIGHT: u32 = 801_993; // mainnet
 
@@ -1588,8 +1592,9 @@ impl InscriptionUpdater<'_, '_> {
     self.height >= self.feature_height(feature)
   }
   pub(crate) fn tap_token_trade_emergency_active(&self) -> bool {
-    matches!(self.btc_network, BtcNetwork::Bitcoin)
-      && self.height >= TAP_TOKEN_TRADE_EMERGENCY_ACTIVATION_HEIGHT
+    // Bitcoin-only exploit patch (Bitcoin addresses and inscriptions); every
+    // Dogecoin height exceeds its activation height, so it must never run here.
+    false
   }
   pub(crate) fn apply_token_trade_emergency_patch(&mut self) {
     if !self.tap_token_trade_emergency_active() {
@@ -1666,33 +1671,44 @@ impl InscriptionUpdater<'_, '_> {
       let _ = self.tap_put(&transferable_key, &corrected_balance.to_string());
     }
   }
+  /// Dogecoin TAP activation heights (doge-tap-protocol-specs); regtest and
+  /// testnet keep every rule at 0 so the ported ord-tap tests stay meaningful.
+  /// Values marked "calibrate" are refined against Trac's TAP-DOGE channel
+  /// (docs/TAP-DOGE-ENGINE-PLAN.md); u32::MAX means the rule never applies.
   pub(crate) fn feature_height(&self, feature: TapFeature) -> u32 {
     let is_mainnet = matches!(self.btc_network, BtcNetwork::Bitcoin);
     if !is_mainnet {
       return 0;
     }
     match feature {
-      TapFeature::Bitmap => TAP_BITMAP_START_HEIGHT,
-      TapFeature::TapStart => TAP_START_HEIGHT,
-      TapFeature::FullTicker => TAP_FULL_TICKER_HEIGHT,
-      TapFeature::Jubilee => TAP_JUBILEE_HEIGHT,
-      TapFeature::Dmt => TAP_DMT_HEIGHT,
-      TapFeature::DmtNatRewards => TAP_DMT_NAT_REWARDS_HEIGHT,
-      TapFeature::PrivilegeActivation => TAP_PRIVILEGE_ACTIVATION_HEIGHT,
-      TapFeature::ValueStringifyActivation => TAP_VALUE_STRINGIFY_ACTIVATION_HEIGHT,
-      TapFeature::DmtParseintActivation => TAP_DMT_PARSEINT_ACTIVATION_HEIGHT,
-      TapFeature::TokenAuthWhitelistFixActivation => TAP_AUTH_ITEM_LENGTH_ACTIVATION_HEIGHT,
-      TapFeature::TestnetFixActivation => TAP_TESTNET_FIX_ACTIVATION_HEIGHT,
+      // ord 1.0.1 activation, the beginning of Dogemap.
+      TapFeature::Bitmap => DOGE_TAP_DOGEMAP_START_HEIGHT,
+      // Spec gives no separate start; the first deployment (dmt-natdogs) is at
+      // 5,097,773, so any start at or before it is equivalent. Calibrate.
+      TapFeature::TapStart => DOGE_TAP_DOGEMAP_START_HEIGHT,
+      TapFeature::Dmt => DOGE_TAP_DOGEMAP_START_HEIGHT,
+      // Spec restates Bitcoin's 841,682, below every Dogecoin TAP height.
+      TapFeature::PrivilegeActivation => DOGE_TAP_DOGEMAP_START_HEIGHT,
+      // Spec: 1 to 32 symbols from block 5,487,639.
+      TapFeature::FullTicker => DOGE_TAP_FULL_TICKER_HEIGHT,
+      // Spec: precise DMT field numbers and "blk" from block 5,497,100.
+      TapFeature::DmtParseintActivation => DOGE_TAP_DMT_PRECISE_HEIGHT,
+      // Doginals have no cursed inscriptions.
+      TapFeature::Jubilee => 0,
+      // Bitcoin-writer runtime and patch heights with no Dogecoin equivalent
+      // in the spec. Calibrate.
+      TapFeature::ValueStringifyActivation
+      | TapFeature::TokenAuthWhitelistFixActivation
+      | TapFeature::TestnetFixActivation => u32::MAX,
+      // Bitcoin-only features.
+      TapFeature::DmtNatRewards => u32::MAX,
       // START TAP-PROOFS
-      TapFeature::TokenAuthorityStakingUpgradeActivation => {
-        TAP_AUTHORITY_STAKING_UPGRADE_ACTIVATION_HEIGHT
-      }
+      TapFeature::TokenAuthorityStakingUpgradeActivation => u32::MAX,
       // END TAP-PROOFS
       // START MINER-REWARD-SHIELD
-      TapFeature::MinerRewardShieldActivation => TAP_MINER_REWARD_SHIELD_ACTIVATION_HEIGHT,
-      TapFeature::MinerRewardTransferExecutionShieldActivation => {
-        TAP_MINER_REWARD_TRANSFER_EXECUTION_SHIELD_ACTIVATION_HEIGHT
-      } // END MINER-REWARD-SHIELD
+      TapFeature::MinerRewardShieldActivation
+      | TapFeature::MinerRewardTransferExecutionShieldActivation => u32::MAX,
+      // END MINER-REWARD-SHIELD
     }
   }
   pub(crate) fn json_stringify_lower(s: &str) -> String {

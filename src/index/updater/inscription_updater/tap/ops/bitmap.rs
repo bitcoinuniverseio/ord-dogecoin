@@ -17,11 +17,12 @@ impl InscriptionUpdater<'_, '_> {
       return;
     };
     let s = String::from_utf8_lossy(body);
-    if !s.ends_with(".bitmap") {
+    // Dogemap (TAP-DOGE spec): Bitmap rules with "dogemap" in place of "bitmap".
+    if !s.ends_with(".dogemap") {
       return;
     }
     let parts: Vec<&str> = s.split('.').collect();
-    if parts.len() != 2 || parts[1] != "bitmap" {
+    if parts.len() != 2 || parts[1] != "dogemap" {
       return;
     }
     let Ok(block_num_signed) = parts[0].parse::<i64>() else {
