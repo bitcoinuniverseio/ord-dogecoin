@@ -53,6 +53,12 @@ pub(crate) struct Options {
   #[cfg(feature = "tap")]
   #[arg(long, help = "Maintain the TAP-DOGE export rolling state digest.")]
   pub(crate) tap_writer_export_rolling_state: bool,
+  #[cfg(feature = "tap")]
+  #[arg(
+    long,
+    help = "TAP-DOGE replay mode: skip the address index and do not keep transactions of completed inscriptions whose content is not text/plain or application/json."
+  )]
+  pub(crate) tap_lean: bool,
   #[arg(
   long,
   help = "Track location of dunes. DUNES ARE IN AN UNFINISHED PRE-ALPHA STATE AND SUBJECT TO CHANGE AT ANY TIME."
