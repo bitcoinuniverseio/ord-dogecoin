@@ -120,7 +120,7 @@ pub(crate) use routes::{TapRoute, TapRouteIndex, TapRouteRebuildStats};
 // Helper functions implemented as associated fns on InscriptionUpdater
 use super::super::InscriptionUpdater;
 use crate::SatPoint;
-use bitcoin::{address::NetworkUnchecked, Address as BtcAddress, Network as BtcNetwork};
+use bitcoin::Network as BtcNetwork;
 use secp256k1::{
   ecdsa::{RecoverableSignature, RecoveryId, Signature as SecpSignature},
   Message, Secp256k1,
@@ -1020,123 +1020,30 @@ impl InscriptionUpdater<'_, '_> {
     arr.copy_from_slice(&out);
     arr
   }
+  // Dogecoin: Base58Check only (no bech32 / taproot). Version bytes:
+  // mainnet P2PKH 30 ("D"), P2SH 22 ("9"/"A"); testnet/regtest P2PKH 113, P2SH 196.
+  fn doge_address_version(addr: &str) -> Option<u8> {
+    let raw = Self::trim_js_whitespace(addr);
+    let payload = bitcoin::util::base58::from_check(raw).ok()?;
+    (payload.len() == 21).then(|| payload[0])
+  }
   pub(crate) fn is_valid_bitcoin_address_mainnet(addr: &str) -> bool {
-    if let Ok(parsed) = addr.parse::<BtcAddress<NetworkUnchecked>>() {
-      parsed.require_network(BtcNetwork::Bitcoin).is_ok()
-    } else {
-      false
-    }
+    matches!(Self::doge_address_version(addr), Some(30) | Some(22))
   }
   pub(crate) fn is_valid_bitcoin_address(&self, addr: &str) -> bool {
-    // Absolute parity with tap-writer's isValidBitcoinAddress:
-    // - Prefix + type gating (P2PKH/P2SH/P2WPKH/P2TR)
-    // - Before the existing testnet fix height, tap-writer uses case-sensitive
-    //   startsWith branches. At/after the fix, it validates through WAValidator
-    //   first, so uppercase bech32 is accepted when the network matches.
-    let raw = Self::trim_js_whitespace(addr);
-    let before_testnet_fix = self.height < self.feature_height(TapFeature::TestnetFixActivation);
-    let network_check_active = self.height >= self.feature_height(TapFeature::FullTicker);
-    let s = if before_testnet_fix {
-      raw.to_string()
-    } else {
-      raw.to_lowercase()
+    let Some(version) = Self::doge_address_version(addr) else {
+      return false;
     };
-
-    let parsed = match raw.parse::<BtcAddress<NetworkUnchecked>>() {
-      Ok(p) => p,
-      Err(_) => return false,
-    };
-
-    // Helpers
-    let main_ok = parsed.clone().require_network(BtcNetwork::Bitcoin).is_ok();
-    let test_ok = parsed.clone().require_network(BtcNetwork::Testnet).is_ok();
-    let reg_ok = parsed.clone().require_network(BtcNetwork::Regtest).is_ok();
-    let signet_ok = parsed.clone().require_network(BtcNetwork::Signet).is_ok();
-    let exact_net_ok = match self.btc_network {
-      BtcNetwork::Bitcoin => main_ok,
-      BtcNetwork::Testnet => test_ok,
-      BtcNetwork::Signet => signet_ok,
-      BtcNetwork::Regtest => reg_ok,
-      _ => main_ok || test_ok || signet_ok || reg_ok,
-    };
-    let spk = parsed.assume_checked_ref().script_pubkey();
-    let b = spk.as_bytes();
-    let is_p2wpkh = b.len() == 22 && b[0] == 0x00 && b[1] == 0x14; // OP_0 PUSH20
-    let is_p2wsh = b.len() == 34 && b[0] == 0x00 && b[1] == 0x20; // OP_0 PUSH32
-    let is_p2tr = b.len() == 34 && b[0] == 0x51 && b[1] == 0x20; // OP_1 PUSH32
-    let is_p2pkh = b.len() == 25
-      && b[0] == 0x76
-      && b[1] == 0xa9
-      && b[2] == 0x14
-      && b[23] == 0x88
-      && b[24] == 0xac;
-    let is_p2sh = b.len() == 23 && b[0] == 0xa9 && b[1] == 0x14 && b[22] == 0x87; // OP_HASH160 PUSH20 OP_EQUAL
-
-    // Map writer's exact branches
-    if s.starts_with("bc1q") {
-      // P2WPKH/P2WSH: network gating per fix activation (writer fix removes separate p2wsh activation)
-      let net_ok = if before_testnet_fix && !network_check_active {
-        main_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && (is_p2wpkh || is_p2wsh);
-    } else if s.starts_with("tb1q") || s.starts_with("bcrt1q") {
-      // P2WPKH/P2WSH test/reg/signet branch
-      let net_ok = if before_testnet_fix && !network_check_active {
-        test_ok || signet_ok || reg_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && (is_p2wpkh || is_p2wsh);
-    } else if s.starts_with("1") {
-      // P2PKH mainnet prefix
-      let net_ok = if before_testnet_fix && !network_check_active {
-        main_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2pkh;
-    } else if s.starts_with("m") || s.starts_with("n") {
-      // P2PKH test/reg prefix
-      let net_ok = if before_testnet_fix && !network_check_active {
-        test_ok || signet_ok || reg_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2pkh;
-    } else if s.starts_with("3") {
-      // P2SH mainnet
-      let net_ok = if before_testnet_fix && !network_check_active {
-        main_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2sh;
-    } else if s.starts_with("2") {
-      // P2SH test/reg
-      let net_ok = if before_testnet_fix && !network_check_active {
-        test_ok || signet_ok || reg_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2sh;
-    } else if s.starts_with("tb1p") || s.starts_with("bcrt1p") {
-      // P2TR test/reg/signet
-      let net_ok = if before_testnet_fix && !network_check_active {
-        test_ok || signet_ok || reg_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2tr;
-    } else {
-      // Fallback: P2TR (e.g., bc1p...)
-      let net_ok = if before_testnet_fix && !network_check_active {
-        main_ok
-      } else {
-        exact_net_ok
-      };
-      return net_ok && is_p2tr;
+    let mainnet = matches!(version, 30 | 22);
+    let testnet = matches!(version, 113 | 196);
+    // Before full-ticker activation the writer accepted any well-formed address;
+    // from it on the address must belong to the indexed network.
+    if self.height < self.feature_height(TapFeature::FullTicker) {
+      return mainnet || testnet;
+    }
+    match self.btc_network {
+      BtcNetwork::Bitcoin => mainnet,
+      _ => testnet,
     }
   }
   pub(crate) fn normalize_address(addr: &str) -> String {

@@ -133,14 +133,11 @@ impl InscriptionUpdater<'_, '_> {
       (block_num, prev.ownr)
     };
 
-    let entry_val = match self.sequence_number_to_entry.get(&sequence_number) {
+    let entry_val = match self.id_to_entry.get(&inscription_id.store()) {
       Ok(Some(v)) => v.value(),
       _ => return,
     };
     let entry = InscriptionEntry::load(entry_val);
-    if entry.inscription_number < 0 {
-      return;
-    }
 
     const BURN_ADDRESS: &str = "1BitcoinEaterAddressDontSendf59kuE";
     let owner = if Self::trim_js_whitespace(owner_address) == "-" {
@@ -158,7 +155,7 @@ impl InscriptionUpdater<'_, '_> {
       vo: u32::from(new_satpoint.outpoint.vout),
       val: output_value_sat.to_string(),
       ins: inscription_id.to_string(),
-      num: entry.inscription_number,
+      num: i32::try_from(entry.inscription_number).unwrap_or(i32::MAX),
       ts: self.timestamp,
     };
 

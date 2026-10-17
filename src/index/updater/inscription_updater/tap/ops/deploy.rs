@@ -145,7 +145,7 @@ impl InscriptionUpdater<'_, '_> {
 
     let mut privilege_auth: Option<String> = None;
     if is_brc20_deploy {
-      privilege_auth = Some(BRC20_PRIVILEGE_AUTHORITY.to_string());
+      privilege_auth = Some(super::super::super::tap_glue::BRC20_PRIVILEGE_AUTHORITY.to_string());
     }
     if let Some(prv_val) = json_val.get("prv") {
       if let Some(prv_str) = prv_val.as_str() {
