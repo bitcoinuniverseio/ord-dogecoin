@@ -56,6 +56,15 @@ pub(crate) struct Options {
   #[cfg(feature = "tap")]
   #[arg(
     long,
+    help = "Additional Dogecoin Core RPC URL used for block and header fetching."
+  )]
+  pub(crate) tap_extra_rpc_url: Option<String>,
+  #[cfg(feature = "tap")]
+  #[arg(long, help = "Cookie file (user:password) for --tap-extra-rpc-url.")]
+  pub(crate) tap_extra_cookie_file: Option<PathBuf>,
+  #[cfg(feature = "tap")]
+  #[arg(
+    long,
     help = "TAP-DOGE replay mode: skip the address index and do not keep transactions of completed inscriptions whose content is not text/plain or application/json."
   )]
   pub(crate) tap_lean: bool,
