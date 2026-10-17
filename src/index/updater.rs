@@ -21,8 +21,10 @@ pub(crate) mod inscription_updater;
 const HEADER_BATCH: u32 = 1000;
 /// Heights per JSON-RPC batch; small enough to finish within the client timeout.
 const HEADER_CHUNK: u32 = 100;
-/// Concurrent header batches (one RPC connection each).
-const HEADER_FETCH_CONNECTIONS: usize = 8;
+/// Upper bound on concurrent header batches and block fetches (one RPC connection each; the
+/// actual count is --nr-parallel-requests). A loaded node answers each call in seconds, so
+/// throughput scales with requests in flight.
+const HEADER_FETCH_CONNECTIONS: usize = 64;
 
 /// Blocks per write transaction while only headers are indexed.
 const HEADER_ONLY_COMMIT_INTERVAL: u32 = 25_000;
