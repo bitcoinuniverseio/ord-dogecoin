@@ -41,12 +41,20 @@ impl InscriptionUpdater<'_, '_> {
     if let Some(hit) = self.block_availability_cache.get(&key_s) {
       return *hit;
     }
+    // Lean replay keeps a location for every inscription but a full entry
+    // only for TAP-readable ones, so either proves the inscription exists.
     if self
       .id_to_entry
       .get(&id.store())
       .ok()
       .flatten()
       .is_some()
+      || self
+        .id_to_satpoint
+        .get(&id.store())
+        .ok()
+        .flatten()
+        .is_some()
     {
       self.block_availability_cache.insert(key_s, true);
       return true;

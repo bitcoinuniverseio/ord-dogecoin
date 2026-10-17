@@ -742,9 +742,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           unsafe {
             std::ptr::copy_nonoverlapping(txids_vec.as_ptr(), inscription_id.as_mut_ptr(), 32)
           }
-          self
-            .id_to_txids
-            .insert(&inscription_id, txids_vec.as_slice())?;
+          // Lean replay: the txid list only serves content lookups.
+          if keep_content {
+            self
+              .id_to_txids
+              .insert(&inscription_id, txids_vec.as_slice())?;
+          }
 
           let og_inscription_id = InscriptionId {
             txid: Txid::from_slice(&txids_vec[0..32]).unwrap(),
@@ -898,18 +901,31 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           }
         }
 
-        self.id_to_entry.insert(
-          &inscription_id,
-          &InscriptionEntry {
-            fee,
-            height: self.height,
-            inscription_number: self.next_number,
-            sat,
-            sequence_number: 0,
-            timestamp: self.timestamp,
-          }
-          .store(),
-        )?;
+        // Lean replay: full entries only for inscriptions TAP can read back
+        // (TAP ops and dogemap claims); every inscription keeps its number and
+        // location, so numbering and the offset-zero rule stay exact.
+        #[cfg(feature = "tap")]
+        let store_entry = !self.tap_index.tap_lean
+          || match &flotsam.origin {
+            Origin::New { inscription, .. } => Self::tap_lean_keeps_content(inscription),
+            Origin::Old(_) => true,
+          };
+        #[cfg(not(feature = "tap"))]
+        let store_entry = true;
+        if store_entry {
+          self.id_to_entry.insert(
+            &inscription_id,
+            &InscriptionEntry {
+              fee,
+              height: self.height,
+              inscription_number: self.next_number,
+              sat,
+              sequence_number: 0,
+              timestamp: self.timestamp,
+            }
+            .store(),
+          )?;
+        }
 
         self.next_number += 1;
       }
