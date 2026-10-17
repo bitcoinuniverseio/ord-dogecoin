@@ -47,6 +47,12 @@ pub(crate) struct Options {
   pub(crate) index: Option<PathBuf>,
   #[arg(long, help = "Track drc20 tokens and balances.")]
   pub(crate) index_drc20: bool,
+  #[cfg(feature = "tap")]
+  #[arg(long, help = "Write TAP-DOGE export deltas for tap-writer-ordtap-v1 consumers.")]
+  pub(crate) tap_writer_export: bool,
+  #[cfg(feature = "tap")]
+  #[arg(long, help = "Maintain the TAP-DOGE export rolling state digest.")]
+  pub(crate) tap_writer_export_rolling_state: bool,
   #[arg(
   long,
   help = "Track location of dunes. DUNES ARE IN AN UNFINISHED PRE-ALPHA STATE AND SUBJECT TO CHANGE AT ANY TIME."
