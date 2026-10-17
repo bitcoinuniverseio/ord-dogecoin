@@ -570,7 +570,13 @@ impl<'index> Updater<'_> {
       && self.height < index.first_inscription_height
       && !(index.index_dunes && self.height >= index.first_dune_height)
     {
-      dogemap_feed::record_block(wtx, self.height, Vec::new(), index.first_inscription_height)?;
+      #[cfg(feature = "tap")]
+      let record_feed = !index.tap_lean;
+      #[cfg(not(feature = "tap"))]
+      let record_feed = true;
+      if record_feed {
+        dogemap_feed::record_block(wtx, self.height, Vec::new(), index.first_inscription_height)?;
+      }
       #[cfg(feature = "tap")]
       {
         let row = InscriptionUpdater::tap_header_row(&block.header, 0)?;
@@ -921,12 +927,19 @@ impl<'index> Updater<'_> {
     // block always has its complete journal and a rolled-back one has none.
     // Independent of the DRC-20 and Dunes flags, which only read their own
     // copies of the updater's operations.
-    dogemap_feed::record_block(
-      wtx,
-      self.height,
-      feed_journal,
-      index.first_inscription_height,
-    )?;
+    // Lean TAP replay serves no Dogemap feed; its journal is write volume only.
+    #[cfg(feature = "tap")]
+    let record_feed = !index.tap_lean;
+    #[cfg(not(feature = "tap"))]
+    let record_feed = true;
+    if record_feed {
+      dogemap_feed::record_block(
+        wtx,
+        self.height,
+        feed_journal,
+        index.first_inscription_height,
+      )?;
+    }
 
     height_to_block_hash.insert(&self.height, &block.header.block_hash().store())?;
 

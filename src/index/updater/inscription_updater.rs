@@ -714,15 +714,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
             .partial_txid_to_txids
             .remove(&previous_txid_bytes.as_slice())?;
 
-          // TAP-DOGE lean replay: content the TAP engine would reject (it
-          // accepts only text/plain* and application/json*) is never read
-          // back, so its transactions are not kept.
+          // TAP-DOGE lean replay: stored content is only read back to resolve
+          // a TAP op's delegate, and a delegate target must itself be a TAP op
+          // (or a dogemap claim), so only such content is kept.
           #[cfg(feature = "tap")]
           let keep_content = !self.tap_index.tap_lean
-            || _inscription
-              .content_type()
-              .map(|ct| ct.starts_with("text/plain") || ct.starts_with("application/json"))
-              .unwrap_or(false);
+            || Self::tap_lean_keeps_content(&_inscription);
           #[cfg(not(feature = "tap"))]
           let keep_content = true;
 

@@ -341,6 +341,24 @@ impl InscriptionUpdater<'_, '_> {
     Self::tap_lean_may_inscribe(self.partial_txid_to_txids, tx)
   }
 
+  /// Lean replay keeps only content a TAP op could resolve through a delegate:
+  /// text/plain* or application/json* whose body mentions "tap" or "dmt" in
+  /// any case, or a ".dogemap" claim.
+  pub(crate) fn tap_lean_keeps_content(inscription: &Inscription) -> bool {
+    let text = inscription
+      .content_type()
+      .map(|ct| ct.starts_with("text/plain") || ct.starts_with("application/json"))
+      .unwrap_or(false);
+    if !text {
+      return false;
+    }
+    let Some(body) = inscription.body() else {
+      return false;
+    };
+    let lower = body.to_ascii_lowercase();
+    lower.windows(3).any(|w| w == b"tap" || w == b"dmt") || lower.ends_with(b".dogemap")
+  }
+
   /// Whether `tx` starts a Doginal envelope or continues a stored partial one.
   pub(crate) fn tap_lean_may_inscribe(
     partial_txid_to_txids: &impl ReadableTable<&'static [u8], &'static [u8]>,
