@@ -208,10 +208,24 @@ impl<'index> Updater<'_> {
     // batch serially, so a single 1000-call batch can outlast the client's
     // 15 s timeout on a loaded node, while chunks on separate connections
     // run on the node's RPC worker threads in parallel.
-    let header_clients = (0..index.nr_parallel_requests.clamp(1, HEADER_FETCH_CONNECTIONS))
+    #[allow(unused_mut)]
+    let mut header_clients = (0..index.nr_parallel_requests.clamp(1, HEADER_FETCH_CONNECTIONS))
       .map(|_| Client::new(&index.rpc_url, index.auth.clone()))
       .collect::<std::result::Result<Vec<Client>, _>>()
       .context("failed to connect to RPC URL")?;
+    // A second node, interleaved so each fetch window spreads across both.
+    #[cfg(feature = "tap")]
+    if let Some((url, auth)) = &index.tap_extra_rpc {
+      let extra = (0..header_clients.len())
+        .map(|_| Client::new(url, auth.clone()))
+        .collect::<std::result::Result<Vec<Client>, _>>()
+        .context("failed to connect to the extra RPC URL")?;
+      header_clients = header_clients
+        .into_iter()
+        .zip(extra)
+        .flat_map(|(primary, extra)| [primary, extra])
+        .collect();
+    }
 
     let first_inscription_height = index.first_inscription_height;
 

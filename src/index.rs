@@ -138,6 +138,9 @@ pub(crate) struct Index {
   tap_writer_export_rolling_state: bool,
   #[cfg(feature = "tap")]
   pub(crate) tap_lean: bool,
+  /// Second node for block and header fetching (replay throughput).
+  #[cfg(feature = "tap")]
+  pub(crate) tap_extra_rpc: Option<(String, Auth)>,
   index_dunes: bool,
   index_sats: bool,
   index_transactions: bool,
@@ -441,6 +444,11 @@ impl Index {
       tap_writer_export_rolling_state: options.tap_writer_export && options.tap_writer_export_rolling_state,
       #[cfg(feature = "tap")]
       tap_lean: options.tap_lean,
+      #[cfg(feature = "tap")]
+      tap_extra_rpc: match (&options.tap_extra_rpc_url, &options.tap_extra_cookie_file) {
+        (Some(url), Some(cookie)) => Some((url.clone(), Auth::CookieFile(cookie.clone()))),
+        _ => None,
+      },
       index_dunes,
       index_sats,
       index_transactions,
