@@ -62,6 +62,8 @@ use crate::templates::{DRC20Balance, DRC20Output, DRC20UtxoOutput};
 mod dogemap_feed;
 mod error;
 mod query;
+#[cfg(feature = "tap")]
+mod tap_reader;
 
 // Helper function to get transaction details
 fn get_transaction_details(
@@ -339,7 +341,13 @@ impl Server {
         csp_origin: options.csp_origin(),
       });
 
-      let router = Router::new()
+      // With the tap feature the router starts from the TAP reader routes.
+      #[cfg(feature = "tap")]
+      let base_router = tap_reader::tap_reader_router();
+      #[cfg(not(feature = "tap"))]
+      let base_router = Router::new();
+
+      let router = base_router
         .route("/", get(Self::home))
         .route("/block-count", get(Self::block_count))
         .route("/block/:query", get(Self::block))
