@@ -19,6 +19,10 @@ pub(crate) mod inscription_updater;
 
 /// Headers fetched per batched RPC call below the first inscription height.
 const HEADER_BATCH: u32 = 1000;
+/// Heights per JSON-RPC batch; small enough to finish within the client timeout.
+const HEADER_CHUNK: u32 = 100;
+/// Concurrent header batches (one RPC connection each).
+const HEADER_FETCH_CONNECTIONS: usize = 8;
 
 /// Blocks per write transaction while only headers are indexed.
 const HEADER_ONLY_COMMIT_INTERVAL: u32 = 25_000;
@@ -198,6 +202,15 @@ impl<'index> Updater<'_> {
     let client =
       Client::new(&index.rpc_url, index.auth.clone()).context("failed to connect to RPC URL")?;
 
+    // One connection per concurrent header chunk: a node answers a JSON-RPC
+    // batch serially, so a single 1000-call batch can outlast the client's
+    // 15 s timeout on a loaded node, while chunks on separate connections
+    // run on the node's RPC worker threads in parallel.
+    let header_clients = (0..index.nr_parallel_requests.clamp(1, HEADER_FETCH_CONNECTIONS))
+      .map(|_| Client::new(&index.rpc_url, index.auth.clone()))
+      .collect::<std::result::Result<Vec<Client>, _>>()
+      .context("failed to connect to RPC URL")?;
+
     let first_inscription_height = index.first_inscription_height;
 
     thread::spawn(move || loop {
@@ -216,7 +229,7 @@ impl<'index> Updater<'_> {
         let end = first_inscription_height
           .min(height.saturating_add(HEADER_BATCH))
           .min(height_limit.unwrap_or(u32::MAX));
-        match Self::get_headers_batch(&client, height, end) {
+        match Self::get_headers_parallel(&header_clients, height, end) {
           Ok(Some(headers)) => {
             for header in headers {
               if let Err(err) = tx.send(BlockData {
@@ -252,6 +265,51 @@ impl<'index> Updater<'_> {
     });
 
     Ok(rx)
+  }
+
+  /// Headers of `start..end`, fetched as `HEADER_CHUNK`-sized batches spread
+  /// over `clients` concurrently and returned in height order, or `None` when
+  /// any chunk cannot be answered completely.
+  fn get_headers_parallel(
+    clients: &[Client],
+    start: u32,
+    end: u32,
+  ) -> Result<Option<Vec<BlockHeader>>> {
+    let chunks = (start..end)
+      .step_by(HEADER_CHUNK as usize)
+      .map(|chunk_start| (chunk_start, end.min(chunk_start + HEADER_CHUNK)))
+      .collect::<Vec<_>>();
+    let mut results: Vec<Option<Result<Option<Vec<BlockHeader>>>>> =
+      (0..chunks.len()).map(|_| None).collect();
+    for (wave, wave_results) in chunks
+      .chunks(clients.len())
+      .zip(results.chunks_mut(clients.len()))
+    {
+      thread::scope(|scope| {
+        let handles = wave
+          .iter()
+          .zip(clients)
+          .map(|(&(chunk_start, chunk_end), client)| {
+            scope.spawn(move || Self::get_headers_batch(client, chunk_start, chunk_end))
+          })
+          .collect::<Vec<_>>();
+        for (slot, handle) in wave_results.iter_mut().zip(handles) {
+          *slot = Some(
+            handle
+              .join()
+              .unwrap_or_else(|_| Err(anyhow!("header fetch thread panicked"))),
+          );
+        }
+      });
+    }
+    let mut headers = Vec::with_capacity((end - start) as usize);
+    for result in results {
+      match result.expect("every chunk is fetched")? {
+        Some(chunk) => headers.extend(chunk),
+        None => return Ok(None),
+      }
+    }
+    Ok(Some(headers))
   }
 
   /// Headers of `start..end` in two batched calls, or `None` when the node
