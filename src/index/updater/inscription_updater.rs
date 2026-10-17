@@ -681,11 +681,29 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
             .partial_txid_to_txids
             .remove(&previous_txid_bytes.as_slice())?;
 
-          let mut tx_buf = vec![];
-          tx.consensus_encode(&mut tx_buf)?;
-          self
-            .txid_to_tx
-            .insert(&txid.into_inner().as_slice(), tx_buf.as_slice())?;
+          // TAP-DOGE lean replay: content the TAP engine would reject (it
+          // accepts only text/plain* and application/json*) is never read
+          // back, so its transactions are not kept.
+          #[cfg(feature = "tap")]
+          let keep_content = !self.tap_index.tap_lean
+            || _inscription
+              .content_type()
+              .map(|ct| ct.starts_with("text/plain") || ct.starts_with("application/json"))
+              .unwrap_or(false);
+          #[cfg(not(feature = "tap"))]
+          let keep_content = true;
+
+          if keep_content {
+            let mut tx_buf = vec![];
+            tx.consensus_encode(&mut tx_buf)?;
+            self
+              .txid_to_tx
+              .insert(&txid.into_inner().as_slice(), tx_buf.as_slice())?;
+          } else {
+            for i in 0..txids_vec.len() / 32 {
+              self.txid_to_tx.remove(&txids_vec[i * 32..i * 32 + 32])?;
+            }
+          }
 
           let mut txid_vec = txid.into_inner().to_vec();
           txids_vec.append(&mut txid_vec);

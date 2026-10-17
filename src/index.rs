@@ -131,6 +131,8 @@ pub(crate) struct Index {
   tap_writer_export: bool,
   #[cfg(feature = "tap")]
   tap_writer_export_rolling_state: bool,
+  #[cfg(feature = "tap")]
+  pub(crate) tap_lean: bool,
   index_dunes: bool,
   index_sats: bool,
   index_transactions: bool,
@@ -432,6 +434,8 @@ impl Index {
       tap_writer_export: options.tap_writer_export,
       #[cfg(feature = "tap")]
       tap_writer_export_rolling_state: options.tap_writer_export && options.tap_writer_export_rolling_state,
+      #[cfg(feature = "tap")]
+      tap_lean: options.tap_lean,
       index_dunes,
       index_sats,
       index_transactions,

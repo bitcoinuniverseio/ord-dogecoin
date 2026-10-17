@@ -904,9 +904,14 @@ impl<'index> Updater<'_> {
       let mut outpoint_to_address = wtx.open_table(OUTPOINT_TO_ADDRESS)?;
       let mut address_to_outpoint = wtx.open_multimap_table(ADDRESS_TO_OUTPOINT)?;
 
+      #[cfg(feature = "tap")]
+      let address_index = !self.index.tap_lean;
+      #[cfg(not(feature = "tap"))]
+      let address_index = true;
+
       for (outpoint, map) in value_cache {
         outpoint_to_value.insert(&outpoint.store(), map.0)?;
-        if map.1 != [0u8; 34] {
+        if address_index && map.1 != [0u8; 34] {
           outpoint_to_address.insert(&outpoint.store(), map.1.as_slice())?;
           address_to_outpoint.insert(map.1.as_slice(), &outpoint.store())?;
         }
