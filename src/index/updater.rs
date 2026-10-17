@@ -248,6 +248,57 @@ impl<'index> Updater<'_> {
         }
       }
 
+      // Full blocks: fetch a window of heights concurrently, one connection
+      // each, and hand them over in height order. A loaded node takes 0.2-2 s
+      // per getblock, so one-at-a-time fetching left the indexer idle.
+      if (index_sats || height >= first_inscription_height) && header_clients.len() > 1 {
+        let window = u32::try_from(header_clients.len()).unwrap_or(1);
+        let window = height_limit.map_or(window, |limit| window.min(limit.saturating_sub(height)));
+        let mut results = Vec::with_capacity(window as usize);
+        thread::scope(|scope| {
+          let handles = (0..window)
+            .zip(&header_clients)
+            .map(|(i, client)| {
+              scope.spawn(move || {
+                Self::get_block_with_retries(client, height + i, index_sats, first_inscription_height)
+              })
+            })
+            .collect::<Vec<_>>();
+          for handle in handles {
+            results.push(
+              handle
+                .join()
+                .unwrap_or_else(|_| Err(anyhow!("block fetch thread panicked"))),
+            );
+          }
+        });
+        let mut stop = false;
+        for result in results {
+          match result {
+            Ok(Some(block)) => {
+              if let Err(err) = tx.send(block.into()) {
+                log::info!("Block receiver disconnected: {err}");
+                return;
+              }
+              height += 1;
+            }
+            Ok(None) => {
+              stop = true;
+              break;
+            }
+            Err(err) => {
+              log::error!("failed to fetch block {height}: {err}");
+              stop = true;
+              break;
+            }
+          }
+        }
+        if stop {
+          break;
+        }
+        continue;
+      }
+
       match Self::get_block_with_retries(&client, height, index_sats, first_inscription_height) {
         Ok(Some(block)) => {
           if let Err(err) = tx.send(block.into()) {
