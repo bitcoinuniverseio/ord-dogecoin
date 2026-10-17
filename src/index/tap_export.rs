@@ -2,6 +2,7 @@
 //! Ported from Trac-Systems/ord-tap b8f6ea3 src/index.rs (CC0); see docs/TAP-DOGE-ENGINE-PLAN.md.
 
 use super::*;
+use crate::index::updater::inscription_updater::{tap_js_json_stringify_value, tap_js_preprocess_json_for_serde};
 use sha2::{Digest, Sha256};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 

@@ -2,6 +2,10 @@
 //! src/index/updater/inscription_updater.rs (lines 215-500, 1229-2167; CC0).
 
 use super::*;
+
+#[allow(dead_code)]
+pub(crate) const BRC20_PRIVILEGE_AUTHORITY: &str =
+  "c14d3de97cecc573d86592240ef38bf5ba298c8c2eaf68e17b99dbbeedbab7e4i0";
 use super::tap::*;
 use secp256k1::{
   ecdsa::{RecoverableSignature, RecoveryId, Signature as SecpSignature},
@@ -29,7 +33,7 @@ impl InscriptionUpdater<'_, '_> {
       return *hit;
     }
     if self
-      .id_to_sequence_number
+      .id_to_entry
       .get(&id.store())
       .ok()
       .flatten()
@@ -54,10 +58,9 @@ impl InscriptionUpdater<'_, '_> {
   pub(crate) fn id_in_current_block(&self, id: &InscriptionId, index: &Index) -> bool {
     if let Ok(Some(block)) = index.get_block_by_height(self.height) {
       for tx in &block.txdata {
-        let txid = tx.compute_txid();
-        if txid == id.txid {
-          let count = u32::try_from(ParsedEnvelope::from_transaction(tx).len()).unwrap_or(u32::MAX);
-          return id.index < count;
+        // Doginals: one inscription per reveal transaction, always index 0.
+        if tx.txid() == id.txid {
+          return id.index == 0;
         }
       }
     }
@@ -106,7 +109,7 @@ impl InscriptionUpdater<'_, '_> {
     let mut tot_btc = 0.0_f64;
     let mut outs: Vec<(usize, String, u64)> = Vec::new();
     for (i, txout) in coinbase.output.iter().enumerate() {
-      let val_sat = txout.value.to_sat();
+      let val_sat = txout.value;
       tot_btc += val_sat as f64 / 100_000_000.0;
       let addr = self.resolve_owner_address(txout, index);
       if Self::trim_js_whitespace(&addr) == "-" {
@@ -193,7 +196,7 @@ impl InscriptionUpdater<'_, '_> {
       // Record shapes (typed CBOR structs) — ins/num are None for rewards.
       // tap-writer writes rows even when the reward amount is zero and marked failed.
       let ts = self.timestamp;
-      let txid = coinbase.compute_txid().to_string();
+      let txid = coinbase.txid().to_string();
       let val_str = (val_sat as u128).to_string();
       let mint_rec = MintRecord {
         addr: address.clone(),
@@ -285,10 +288,7 @@ impl InscriptionUpdater<'_, '_> {
       return "-".to_string();
     }
 
-    match index
-      .settings
-      .chain()
-      .address_from_script(&txout.script_pubkey)
+    match index.chain.address_from_script(&txout.script_pubkey)
     {
       Ok(addr) => addr.to_string(),
       Err(_) => "-".to_string(),
