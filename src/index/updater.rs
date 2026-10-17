@@ -462,6 +462,13 @@ impl<'index> Updater<'_> {
       && !(index.index_dunes && self.height >= index.first_dune_height)
     {
       dogemap_feed::record_block(wtx, self.height, Vec::new(), index.first_inscription_height)?;
+      #[cfg(feature = "tap")]
+      {
+        let row = InscriptionUpdater::tap_header_row(&block.header, 0)?;
+        wtx
+          .open_table(TAP_KV)?
+          .insert(format!("hdr/{}", self.height).as_bytes(), row.as_slice())?;
+      }
       wtx
         .open_table(HEIGHT_TO_BLOCK_HASH)?
         .insert(&self.height, &block.header.block_hash().store())?;
@@ -565,7 +572,18 @@ impl<'index> Updater<'_> {
         index.chain,
         #[cfg(feature = "tap")]
         &mut tap_kv,
+        #[cfg(feature = "tap")]
+        index,
       )?;
+
+      #[cfg(feature = "tap")]
+      {
+        let ntx = u32::try_from(block.txdata.len()).unwrap_or(u32::MAX);
+        let row = InscriptionUpdater::tap_header_row(&block.header, ntx)?;
+        inscription_updater
+          .tap_db
+          .put(format!("hdr/{}", self.height).as_bytes(), &row);
+      }
 
       if self.index.index_sats {
         let mut sat_to_satpoint = wtx.open_table(SAT_TO_SATPOINT)?;
@@ -679,6 +697,10 @@ impl<'index> Updater<'_> {
       }
 
       feed_journal = std::mem::take(&mut inscription_updater.journal.records);
+
+      // Flush this block's TAP writes inside the block's write transaction.
+      #[cfg(feature = "tap")]
+      inscription_updater.tap_finalize_block()?;
 
       if index.index_drc20 && self.height >= index.first_inscription_height {
         let operations = inscription_updater.operations.clone();

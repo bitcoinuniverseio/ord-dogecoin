@@ -234,7 +234,7 @@ impl<'a, 'tx> TapDeltaBatch<'a, 'tx> {
 }
 
 impl InscriptionUpdater<'_, '_> {
-  fn tap_encode_value<T: serde::Serialize>(value: &T) -> Result<(Vec<u8>, serde_json::Value)> {
+  pub(crate) fn tap_encode_value<T: serde::Serialize>(value: &T) -> Result<(Vec<u8>, serde_json::Value)> {
     let mut buf = Vec::new();
     let json_value = serde_json::to_value(value)?;
     match &json_value {

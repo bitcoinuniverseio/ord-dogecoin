@@ -12,6 +12,15 @@ use secp256k1::{
   Message, Secp256k1,
 };
 
+/// Compact header snapshot DMT mints read for any past height (ord-tap parity).
+#[derive(Serialize)]
+pub(crate) struct TapHeaderSnapshot {
+  pub(crate) bits: u32,
+  pub(crate) nonce: u32,
+  pub(crate) ntx: u32,
+  pub(crate) time: u32,
+}
+
 impl InscriptionUpdater<'_, '_> {
   pub(crate) fn is_dmt_nat_rewards_enabled(&self) -> bool {
     self.tap_feature_enabled(TapFeature::DmtNatRewards)
@@ -293,6 +302,19 @@ impl InscriptionUpdater<'_, '_> {
       Ok(addr) => addr.to_string(),
       Err(_) => "-".to_string(),
     }
+  }
+
+  /// The TAP_KV value for `hdr/<height>`; Dogecoin DMT uses fields 4, 10 and 11.
+  pub(crate) fn tap_header_row(header: &bitcoin::BlockHeader, ntx: u32) -> Result<Vec<u8>> {
+    Ok(
+      Self::tap_encode_value(&TapHeaderSnapshot {
+        bits: header.bits,
+        nonce: header.nonce,
+        ntx,
+        time: header.time,
+      })?
+      .0,
+    )
   }
 
   pub(crate) fn tap_finalize_block(
