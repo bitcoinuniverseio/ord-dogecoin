@@ -815,19 +815,24 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
       output_value = end;
 
-      let address_from_script = self
-        .chain
-        .address_from_script(&tx_out.clone().script_pubkey);
+      // Lean replay writes no address index, so the per-output Base58
+      // encoding (most of its CPU time in DRC-20-era blocks) is skipped.
+      #[cfg(feature = "tap")]
+      let encode_address = !self.tap_index.tap_lean;
+      #[cfg(not(feature = "tap"))]
+      let encode_address = true;
 
-      let address = if address_from_script.is_err() {
-        [0u8; 34]
+      let address = if encode_address {
+        match self.chain.address_from_script(&tx_out.script_pubkey) {
+          Ok(address) => address
+            .to_string()
+            .as_bytes()
+            .try_into()
+            .unwrap_or([0u8; 34]),
+          Err(_) => [0u8; 34],
+        }
       } else {
-        address_from_script
-          .unwrap()
-          .to_string()
-          .as_bytes()
-          .try_into()
-          .unwrap_or([0u8; 34])
+        [0u8; 34]
       };
 
       self.value_cache.insert(
@@ -835,7 +840,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           vout: vout.try_into().unwrap(),
           txid,
         },
-        (tx_out.clone().value, address),
+        (tx_out.value, address),
       );
     }
 
