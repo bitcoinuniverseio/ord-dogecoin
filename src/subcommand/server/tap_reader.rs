@@ -7682,7 +7682,7 @@ pub(super) fn tap_reader_router() -> Router {
     .route("/r/tap/getAccountReceiveList/:address/:ticker", get(tap_get_account_receive_list))
     .route("/r/tap/getTransferAmountByInscription/:inscription", get(tap_get_single_transferable))
     .route("/r/tap/getListRecords", get(tap_get_list_records))
-    .route("/r/tap/getLength/{*length_key}", get(tap_get_length_generic))
+    .route("/r/tap/getLength/*length_key", get(tap_get_length_generic))
     .route("/r/tap/getCurrentBlock", get(tap_get_current_block))
     .route("/r/tap/getRegexBackend", get(tap_get_regex_backend))
 }
