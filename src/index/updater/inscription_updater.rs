@@ -6,6 +6,48 @@ use crate::sat_point::SatPoint;
 
 use super::*;
 
+#[cfg(feature = "tap")]
+mod tap;
+#[cfg(feature = "tap")]
+mod tap_glue;
+#[cfg(feature = "tap")]
+#[allow(unused_imports)]
+pub(crate) use tap::{
+  tap_js_json_stringify_str,
+  tap_js_json_stringify_value,
+  tap_js_preprocess_json_for_serde,
+  tap_js_to_lowercase,
+  // records
+  BitmapRecord,
+  DeployRecord,
+  DmtElementRecord,
+  MintFlatRecord,
+  MintRecord,
+  MintSuperflatRecord,
+  PrivilegeVerifiedRecord,
+  TapAccumulatorEntry,
+  TapBatch,
+  TapDeltaBatch,
+  TapFeature,
+  TapRoute,
+  TapRouteIndex,
+  TapRouteRebuildStats,
+  TokenAuthCreateRecord,
+  TokenAuthRedeemRecord,
+  TradeBuyBuyerRecord,
+  TradeBuySellerRecord,
+  TradeOfferRecord,
+  TransferInitFlatRecord,
+  TransferInitRecord,
+  TransferInitSuperflatRecord,
+  TransferSendFlatRecord,
+  TransferSendReceiverRecord,
+  TransferSendSenderRecord,
+  TransferSendSuperflatRecord,
+  BURN_ADDRESS,
+  MAX_DEC_U64_STR,
+};
+
 pub(super) struct Flotsam {
   txid: Txid,
   /// Position of `txid` in its block.
@@ -52,6 +94,187 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   current_tx_index: u32,
   /// Dogemap feed journal rows for this block.
   pub(super) journal: JournalRecorder,
+  // TAP-DOGE engine state (ported from ord-tap; see docs/TAP-DOGE-ENGINE-PLAN.md).
+  #[cfg(feature = "tap")]
+  pub(super) tap_db: TapBatch<'a, 'tx>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_delta_db: Option<TapDeltaBatch<'a, 'tx>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_writes: Option<Vec<String>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_overlay: Option<HashMap<String, Option<(Vec<u8>, serde_json::Value)>>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_list_len_cache: Option<HashMap<String, usize>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_route_index: Option<std::rc::Rc<std::cell::RefCell<TapRouteIndex>>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_route_index_verify: bool,
+  #[cfg(feature = "tap")]
+  pub(super) list_len_cache: HashMap<String, usize>,
+  #[cfg(feature = "tap")]
+  pub(super) block_availability_cache: HashMap<String, bool>,
+  #[cfg(feature = "tap")]
+  pub(super) btc_network: bitcoin::Network,
+  #[cfg(feature = "tap")]
+  pub(super) profile: bool,
+  #[cfg(feature = "tap")]
+  pub(super) delegate_cache: HashMap<InscriptionId, bool>,
+  #[cfg(feature = "tap")]
+  pub(super) delegate_payload_cache: HashMap<InscriptionId, Inscription>,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_created_total_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_created_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_el_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_el_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dpl_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dpl_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtmint_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtmint_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_mint_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_mint_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtdep_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtdep_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_env_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_old_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_new_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_parent_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_txdb_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_addr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_update_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_event_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_event_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_old_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_new_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_txdb_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_addr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_update_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_old_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_old_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_parents_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_entry_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_serialize_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_maps_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_num_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_sat_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_delegate_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_tap_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_utxo_us: u128,
 }
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
@@ -76,6 +299,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     timestamp: u32,
     value_cache: &'a mut HashMap<OutPoint, OutPointMapValue>,
     chain: Chain,
+    #[cfg(feature = "tap")] tap_kv: &'a mut Table<'tx, &'static [u8], &'static [u8]>,
   ) -> Result<Self> {
     let next_number = number_to_id
       .iter()?
@@ -113,6 +337,186 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       current_txid: Txid::all_zeros(),
       current_tx_index: 0,
       journal: JournalRecorder::default(),
+      #[cfg(feature = "tap")]
+      tap_db: TapBatch::new(tap_kv),
+      #[cfg(feature = "tap")]
+      tap_delta_db: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_writes: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_overlay: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_list_len_cache: None,
+      #[cfg(feature = "tap")]
+      tap_route_index: None,
+      #[cfg(feature = "tap")]
+      tap_route_index_verify: false,
+      #[cfg(feature = "tap")]
+      list_len_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      block_availability_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      btc_network: chain.network(),
+      #[cfg(feature = "tap")]
+      profile: false,
+      #[cfg(feature = "tap")]
+      delegate_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      delegate_payload_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      prof_bm_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_created_total_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_created_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_el_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_el_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dpl_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dpl_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtmint_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtmint_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_mint_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_mint_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtdep_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtdep_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_env_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_old_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_new_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_parent_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_txdb_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_addr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_update_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_event_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_event_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_old_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_new_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_txdb_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_addr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_update_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_old_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_old_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_parents_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_entry_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_serialize_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_maps_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_num_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_sat_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_delegate_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_tap_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_utxo_us: 0,
     })
   }
 

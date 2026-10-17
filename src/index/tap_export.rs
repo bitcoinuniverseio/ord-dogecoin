@@ -2,15 +2,17 @@
 //! Ported from Trac-Systems/ord-tap b8f6ea3 src/index.rs (CC0); see docs/TAP-DOGE-ENGINE-PLAN.md.
 
 use super::*;
+use sha2::{Digest, Sha256};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 
 // Generic bytes->bytes key/value store for TAP protocol state
-define_table! { TAP_KV, &[u8], &[u8] }
+pub(crate) const TAP_KV: TableDefinition<&[u8], &[u8]> = TableDefinition::new("TAP_KV");
 // Read-only fallback for export deltas written before sidecar delta files.
-define_table! { TAP_EXPORT_DELTAS, &[u8], &[u8] }
+pub(crate) const TAP_EXPORT_DELTAS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("TAP_EXPORT_DELTAS");
 // Non-consensus TAP export coverage metadata.
-define_table! { TAP_EXPORT_METADATA, &[u8], &[u8] }
+pub(crate) const TAP_EXPORT_METADATA: TableDefinition<&[u8], &[u8]> = TableDefinition::new("TAP_EXPORT_METADATA");
 // Non-consensus rolling TAP export state digests by block.
-define_table! { TAP_EXPORT_BLOCK_STATES, &[u8], &[u8] }
+pub(crate) const TAP_EXPORT_BLOCK_STATES: TableDefinition<&[u8], &[u8]> = TableDefinition::new("TAP_EXPORT_BLOCK_STATES");
 
 const TAP_EXPORT_ENABLED_FROM_HEIGHT: &[u8] = b"export_enabled_from_height";
 pub(crate) const TAP_EXPORT_COVERAGE_TIP: &[u8] = b"export_coverage_tip";
@@ -602,9 +604,7 @@ impl Index {
     let block_count = self.block_count()?;
     let tx = self.begin_write()?;
     {
-      let mut tap_kv = self
-        .settings
-        .tap_writer_export_rolling_state()
+      let mut tap_kv = self.tap_writer_export_rolling_state
         .then(|| tx.open_table(TAP_KV))
         .transpose()?;
       let mut table = tx.open_table(TAP_EXPORT_METADATA)?;

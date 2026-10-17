@@ -42,6 +42,10 @@ mod reorg;
 mod fetcher;
 mod rtx;
 mod updater;
+#[cfg(feature = "tap")]
+mod tap_export;
+#[cfg(feature = "tap")]
+pub(crate) use tap_export::*;
 
 pub(crate) use self::dogemap_feed::{
   FeedBlockCache, FeedBlockRequest, FeedBodyRequest, FeedFailure,
@@ -123,6 +127,10 @@ pub(crate) struct Index {
   genesis_block_coinbase_txid: Txid,
   height_limit: Option<u32>,
   index_drc20: bool,
+  #[cfg(feature = "tap")]
+  tap_writer_export: bool,
+  #[cfg(feature = "tap")]
+  tap_writer_export_rolling_state: bool,
   index_dunes: bool,
   index_sats: bool,
   index_transactions: bool,
@@ -420,6 +428,10 @@ impl Index {
       genesis_block_coinbase_transaction,
       height_limit: options.height_limit,
       index_drc20,
+      #[cfg(feature = "tap")]
+      tap_writer_export: options.tap_writer_export,
+      #[cfg(feature = "tap")]
+      tap_writer_export_rolling_state: options.tap_writer_export && options.tap_writer_export_rolling_state,
       index_dunes,
       index_sats,
       index_transactions,

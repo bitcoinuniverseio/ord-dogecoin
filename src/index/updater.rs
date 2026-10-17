@@ -15,7 +15,7 @@ use crate::sat_point::SatPoint;
 
 mod drc20_updater;
 mod dune_updater;
-mod inscription_updater;
+pub(crate) mod inscription_updater;
 
 /// Headers fetched per batched RPC call below the first inscription height.
 const HEADER_BATCH: u32 = 1000;
@@ -540,6 +540,8 @@ impl<'index> Updater<'_> {
     let feed_journal;
 
     {
+      #[cfg(feature = "tap")]
+      let mut tap_kv = wtx.open_table(TAP_KV)?;
       let mut inscription_updater = InscriptionUpdater::new(
         self.height,
         &mut inscription_id_to_satpoint,
@@ -561,6 +563,8 @@ impl<'index> Updater<'_> {
         block.header.time,
         value_cache,
         index.chain,
+        #[cfg(feature = "tap")]
+        &mut tap_kv,
       )?;
 
       if self.index.index_sats {
