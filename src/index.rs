@@ -46,6 +46,11 @@ mod updater;
 mod tap_export;
 #[cfg(feature = "tap")]
 pub(crate) use tap_export::*;
+#[cfg(feature = "tap")]
+pub(crate) use updater::inscription_updater::{
+  tap_js_json_stringify_str, tap_js_json_stringify_value, tap_js_preprocess_json_for_serde,
+  tap_js_to_lowercase,
+};
 
 pub(crate) use self::dogemap_feed::{
   FeedBlockCache, FeedBlockRequest, FeedBodyRequest, FeedFailure,
