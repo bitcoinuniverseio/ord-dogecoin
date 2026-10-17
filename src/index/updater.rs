@@ -540,7 +540,22 @@ impl<'index> Updater<'_> {
 
     let index_inscriptions = self.height >= index.first_inscription_height;
 
+    #[cfg(feature = "tap")]
+    let mut tap_prefetched = HashSet::new();
+
     if index_inscriptions {
+      // Lean replay: request input values only for transactions that can move,
+      // create or continue an inscription as of the start of this block.
+      #[cfg(feature = "tap")]
+      let lean_tables = if index.tap_lean {
+        Some((
+          wtx.open_table(SATPOINT_TO_INSCRIPTION_ID)?,
+          wtx.open_table(PARTIAL_TXID_TO_INSCRIPTION_TXIDS)?,
+        ))
+      } else {
+        None
+      };
+
       // Send all missing input outpoints to be fetched right away
       let txids = block
         .txdata
@@ -548,6 +563,23 @@ impl<'index> Updater<'_> {
         .map(|(_, txid)| txid)
         .collect::<HashSet<_>>();
       for (tx, _) in &block.txdata {
+        #[cfg(feature = "tap")]
+        if let Some((satpoints, partials)) = &lean_tables {
+          let mut relevant = false;
+          for input in &tx.input {
+            if !input.previous_output.is_null()
+              && Index::inscriptions_on_output(satpoints, input.previous_output)?
+                .next()
+                .is_some()
+            {
+              relevant = true;
+              break;
+            }
+          }
+          if !relevant && !InscriptionUpdater::tap_lean_may_inscribe(partials, tx)? {
+            continue;
+          }
+        }
         for input in &tx.input {
           let prev_output = input.previous_output;
           // We don't need coinbase input value
@@ -570,6 +602,8 @@ impl<'index> Updater<'_> {
           }
           // We don't know the value of this tx input. Send this outpoint to background thread to be fetched
           outpoint_sender.blocking_send(prev_output)?;
+          #[cfg(feature = "tap")]
+          tap_prefetched.insert(prev_output);
         }
       }
     }
@@ -636,6 +670,7 @@ impl<'index> Updater<'_> {
 
       #[cfg(feature = "tap")]
       {
+        inscription_updater.tap_prefetched = std::mem::take(&mut tap_prefetched);
         let ntx = u32::try_from(block.txdata.len()).unwrap_or(u32::MAX);
         let row = InscriptionUpdater::tap_header_row(&block.header, ntx)?;
         inscription_updater

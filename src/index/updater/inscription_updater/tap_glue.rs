@@ -317,6 +317,63 @@ impl InscriptionUpdater<'_, '_> {
     )
   }
 
+  /// Lean replay relevance of `tx` at the time it is indexed: an input carries
+  /// an inscription, or it starts or continues a Doginal envelope (the
+  /// doginals-trac-1.0.2-compat-v1 rule: only without an inscription at input
+  /// offset zero).
+  pub(crate) fn tap_lean_tx_relevant(&self, tx: &Transaction) -> Result<bool> {
+    let mut zero_offset_inscription = false;
+    for (i, tx_in) in tx.input.iter().enumerate() {
+      if tx_in.previous_output.is_null() {
+        continue;
+      }
+      for result in Index::inscriptions_on_output(self.satpoint_to_id, tx_in.previous_output)? {
+        let (satpoint, _) = result?;
+        if i > 0 || satpoint.offset > 0 {
+          return Ok(true);
+        }
+        zero_offset_inscription = true;
+      }
+    }
+    if zero_offset_inscription {
+      return Ok(true);
+    }
+    Self::tap_lean_may_inscribe(self.partial_txid_to_txids, tx)
+  }
+
+  /// Whether `tx` starts a Doginal envelope or continues a stored partial one.
+  pub(crate) fn tap_lean_may_inscribe(
+    partial_txid_to_txids: &impl ReadableTable<&'static [u8], &'static [u8]>,
+    tx: &Transaction,
+  ) -> Result<bool> {
+    let Some(first) = tx.input.first() else {
+      return Ok(false);
+    };
+    let previous: [u8; 32] = first.previous_output.txid.into_inner();
+    if partial_txid_to_txids.get(&previous.as_slice())?.is_some() {
+      return Ok(true);
+    }
+    Ok(!matches!(
+      Inscription::from_transactions(vec![tx.clone()]),
+      ParsedInscription::None
+    ))
+  }
+
+  /// One output value read directly from the node, for a relevant input the
+  /// lean prefetch did not request (its inscription arrived within this block).
+  pub(crate) fn tap_fetch_output_value(index: &Index, outpoint: OutPoint) -> Result<u64> {
+    let tx = index
+      .client()
+      .get_raw_transaction(&outpoint.txid)
+      .map_err(|err| anyhow!("failed to get transaction for {}: {err}", outpoint.txid))?;
+    Ok(
+      tx.output
+        .get(usize::try_from(outpoint.vout)?)
+        .ok_or_else(|| anyhow!("missing output {outpoint}"))?
+        .value,
+    )
+  }
+
   pub(crate) fn tap_finalize_block(
     &mut self,
   ) -> Result<Option<crate::index::TapExportRollingState>> {
