@@ -77,6 +77,8 @@ impl<'index> Updater<'_> {
   pub(crate) fn update_index(&mut self) -> Result {
     let mut wtx = self.index.begin_write()?;
     let starting_height = u32::try_from(self.index.client().get_block_count()?).unwrap() + 1;
+    #[cfg(feature = "tap")]
+    Self::tap_lean_durability(&mut wtx, self.index, self.height, starting_height);
 
     wtx
       .open_table(WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP)?
@@ -153,6 +155,8 @@ impl<'index> Updater<'_> {
         value_cache = HashMap::new();
         uncommitted = 0;
         wtx = self.index.begin_write()?;
+        #[cfg(feature = "tap")]
+        Self::tap_lean_durability(&mut wtx, self.index, self.height, starting_height);
         let height = wtx
           .open_table(HEIGHT_TO_BLOCK_HASH)?
           .range(0..)?
@@ -190,6 +194,23 @@ impl<'index> Updater<'_> {
     }
 
     Ok(())
+  }
+
+  /// Lean TAP replay far from the node tip commits with eventual durability:
+  /// the OS orders the page writes instead of a synchronous flush per commit,
+  /// which dominated replay time on HDD. A crash can lose the last commits
+  /// but leaves a consistent database; near the tip, commits stay immediate
+  /// so reorg savepoints are durable.
+  #[cfg(feature = "tap")]
+  fn tap_lean_durability(
+    wtx: &mut WriteTransaction,
+    index: &Index,
+    height: u32,
+    starting_height: u32,
+  ) {
+    if index.tap_lean && starting_height.saturating_sub(height) > 100 {
+      wtx.set_durability(redb::Durability::Eventual);
+    }
   }
 
   fn fetch_blocks_from(
