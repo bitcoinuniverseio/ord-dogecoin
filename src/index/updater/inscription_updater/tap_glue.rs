@@ -429,6 +429,11 @@ impl InscriptionUpdater<'_, '_> {
   pub(crate) fn tap_finalize_block(
     &mut self,
   ) -> Result<Option<crate::index::TapExportRollingState>> {
+    if self.tap_index.tap_lean {
+      self
+        .tap_db
+        .put(super::TAP_LEAN_NEXT_NUMBER_KEY, &self.next_number.to_le_bytes());
+    }
     self.tap_db.flush()?;
     let rolling_state = self
       .tap_delta_db
