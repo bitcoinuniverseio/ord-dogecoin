@@ -68,9 +68,35 @@ impl InscriptionUpdater<'_, '_> {
     }
     // Targeted fallback: check if this inscription id exists in this block by
     // scanning txids; only parse envelopes for the matching tx.
-    let ok = self.id_in_current_block(&id, index);
+    let ok = self.id_in_current_block(&id, index)
+      || (self.tap_index.tap_lean && Self::tap_lean_inscription_on_chain(index, &id, self.height));
     self.block_availability_cache.insert(key_s, ok);
     ok
+  }
+
+  /// Lean replay keeps no id lookup for non-TAP inscriptions, so a reference to
+  /// one (a DMT deploy's "prj") is confirmed from the node: the inscription's
+  /// first reveal must be confirmed at or below `height` and carry a Doginal
+  /// envelope.
+  pub(crate) fn tap_lean_inscription_on_chain(index: &Index, id: &InscriptionId, height: u32) -> bool {
+    if id.index != 0 {
+      return false;
+    }
+    let client = index.client();
+    let (Ok(info), Ok(tip)) = (client.get_raw_transaction_info(&id.txid), client.get_block_count()) else {
+      return false;
+    };
+    let Some(confirmations) = info.confirmations.filter(|c| *c > 0) else {
+      return false;
+    };
+    let tx_height = tip + 1 - u64::from(confirmations);
+    if tx_height > u64::from(height) {
+      return false;
+    }
+    let Ok(tx) = bitcoin::consensus::encode::deserialize::<Transaction>(&info.hex) else {
+      return false;
+    };
+    !matches!(Inscription::from_transactions(vec![tx]), ParsedInscription::None)
   }
   pub(crate) fn id_in_current_block(&self, id: &InscriptionId, index: &Index) -> bool {
     if let Ok(Some(block)) = index.get_block_by_height(self.height) {

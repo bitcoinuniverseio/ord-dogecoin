@@ -1053,7 +1053,16 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     }
 
     self.satpoint_to_id.insert(&new_satpoint, &inscription_id)?;
-    self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
+    // Lean replay: the id->location lookup is kept only for inscriptions TAP
+    // reads back (those with a stored entry); location tracking itself is the
+    // satpoint->id table above, kept for every inscription.
+    #[cfg(feature = "tap")]
+    let track_id = !self.tap_index.tap_lean || self.id_to_entry.get(&inscription_id)?.is_some();
+    #[cfg(not(feature = "tap"))]
+    let track_id = true;
+    if track_id {
+      self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
+    }
 
     Ok(())
   }
