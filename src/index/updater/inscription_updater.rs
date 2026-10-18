@@ -8,6 +8,9 @@ use super::*;
 
 #[cfg(feature = "tap")]
 mod tap;
+/// TAP_KV row holding the lean replay's next inscription number (u64 LE).
+#[cfg(feature = "tap")]
+const TAP_LEAN_NEXT_NUMBER_KEY: &[u8] = b"_lean/next_number";
 #[cfg(feature = "tap")]
 mod tap_glue;
 #[cfg(feature = "tap")]
@@ -315,6 +318,17 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       .next()
       .transpose()?
       .unwrap_or(0);
+
+    // Lean replay records numbers only for TAP-readable inscriptions, so the
+    // running counter is also kept in TAP_KV and the larger of the two wins.
+    #[cfg(feature = "tap")]
+    let next_number = next_number.max(
+      tap_kv
+        .get(TAP_LEAN_NEXT_NUMBER_KEY)?
+        .and_then(|value| <[u8; 8]>::try_from(value.value()).ok())
+        .map(u64::from_le_bytes)
+        .unwrap_or(0),
+    );
 
     Ok(Self {
       flotsam: Vec::new(),
@@ -887,9 +901,21 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         fee,
         inscription: _,
       } => {
-        self
-          .number_to_id
-          .insert(&self.next_number, &inscription_id)?;
+        // Lean replay: number->id only for TAP-readable inscriptions; the
+        // counter itself persists in TAP_KV (TAP_LEAN_NEXT_NUMBER_KEY).
+        #[cfg(feature = "tap")]
+        let record_number = !self.tap_index.tap_lean
+          || match &flotsam.origin {
+            Origin::New { inscription, .. } => Self::tap_lean_keeps_content(inscription),
+            Origin::Old(_) => true,
+          };
+        #[cfg(not(feature = "tap"))]
+        let record_number = true;
+        if record_number {
+          self
+            .number_to_id
+            .insert(&self.next_number, &inscription_id)?;
+        }
 
         let mut sat = None;
         if let Some(input_sat_ranges) = input_sat_ranges {
