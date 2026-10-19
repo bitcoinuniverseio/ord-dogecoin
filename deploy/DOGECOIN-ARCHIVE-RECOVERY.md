@@ -100,6 +100,34 @@ complete executable digest in the deployment receipt, alongside the archive
 identity and storage-tool versions. Do not relabel the recovered artifact as a
 new source build.
 
+## Successor preflight module
+
+`deploy/archive_recovery_admission.py` provides a preflight policy and a Linux
+owner lease. It contains no service launcher. Callers must use privately captured
+observations, a protected expected manifest, and the same held lease throughout
+any separately reviewed successor lifetime. A passed snapshot is not native health.
+Do not unlink or replace the lease path while an owner holds it.
+
+Preflight refuses stale or future-dated observations, changed source/delta/runtime
+identity, a live legacy owner or mounted view, absent read-only-source proof,
+unverified capacity exhaustion handling, and stale/unauthenticated/unowned RPC.
+Expected source/delta metadata includes device, inode, size, timestamps, ownership,
+mode and link count. The manifest must reserve at least 300 GB, plus all remaining
+growth up to its explicit maximum delta allocation. This is a budget calculation,
+not enforcement of a disk limit. No recovery is admitted until exhaustion handling
+has independent proof. The module does not grant that proof itself.
+
+Policy tests: `python -m unittest discover -s deploy -p test_archive_recovery_admission.py -v`.
+On Windows, eight policy cases passed and two Linux-only lease cases were skipped.
+Those two lease cases then passed on I1 Linux in a fresh network-isolated synthetic
+fixture: contention preserves bytes and refuses a second owner; symlinks, hardlinks
+and a writable parent are rejected. No production lease, native database or service
+was opened by those tests. Do not rerun the completed remote fixture for freshness.
+
+The runtime collector, lifetime lease integration, enforced growth/exhaustion
+handling and guarded successor launcher remain incomplete. The failed legacy unit
+must remain stopped; this module does not authorize a restart.
+
 ## First-start safety gates
 
 1. Verify the shared Core is Dogecoin mainnet, unpruned, beyond the preserved
