@@ -284,3 +284,35 @@ the writer lifetime. Do not infer readiness from this synthetic result.
 
 References: [Linux resource limits](https://www.man7.org/linux/man-pages/man2/getrlimit.2.html)
 and [QEMU image utility](https://www.qemu.org/docs/master/tools/qemu-img.html).
+
+
+### 19 October native recovery after bounded QEMU growth failure
+
+A new tiny dirty synthetic redb database was created with the retained pinned
+scanner (SHA-256 6711b8f9649a543900a2f8639d147beda9f6f2683a1596b32a1a2381f31df779).
+QEMU exported its qcow2 overlay through FUSE in a private mount/network namespace.
+With the daemon file-size ceiling fixed at the initial 196,616-byte image size,
+native recovery returned exit 1 with an I/O error and the delta did not grow.
+After orderly storage shutdown, qemu-img check reported zero errors. The same
+delta, reopened with a 16 MiB synthetic ceiling, completed recovery (exit 2, the
+scanner's inspection-required recovery result); its next open returned exit 0
+with clean integrity. The synthetic base digest stayed unchanged. No original
+archive, retained production delta or production service was touched.
+
+The harness initially sent QMP quit and disconnected without awaiting its
+response, leaving an idle synthetic daemon waiting. Only the local SSH observer
+was closed. Exact fixture identities and completed native logs were checked;
+acknowledged QMP quit commands then completed the three already-planned phases
+without native signals, replay or duplicate workers. Future shutdown code must
+keep the QMP connection open until the quit response is received and then verify
+the daemon exit and FUSE mount removal. Do not reuse the initial disconnect-only
+shutdown sequence.
+
+Receipts: /home/universe-restore/doge-native-growth-v1-20261019.json and
+/home/universe-restore/doge-native-growth-qmp-completion-v1-20261019.json.
+This completed synthetic scenario must not be rerun. It qualifies the pinned
+scanner's recovery through this FUSE file-limit failure, not physical ENOSPC,
+application writes or large-archive recovery. Production admission stays closed
+until lifetime source-view/lease/limit enforcement, dedicated worker identity,
+capacity reserve policy and native application readiness are integrated and
+reviewed. Preserve the original archive and its existing delta throughout.
