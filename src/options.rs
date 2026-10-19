@@ -71,6 +71,12 @@ pub(crate) struct Options {
   #[cfg(feature = "tap")]
   #[arg(long, help = "Compact the index file before opening it, reclaiming freed pages.")]
   pub(crate) tap_compact: bool,
+  #[cfg(feature = "tap")]
+  #[arg(
+    long,
+    help = "Lean replay maintenance: drop stored output values and the content, transactions and numbers of inscriptions TAP cannot read, then continue."
+  )]
+  pub(crate) tap_prune: bool,
   #[arg(
   long,
   help = "Track location of dunes. DUNES ARE IN AN UNFINISHED PRE-ALPHA STATE AND SUBJECT TO CHANGE AT ANY TIME."
