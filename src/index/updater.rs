@@ -140,9 +140,19 @@ impl<'index> Updater<'_> {
       // fresh index's time in fsync. They commit every
       // HEADER_ONLY_COMMIT_INTERVAL blocks; savepoints are only taken near the
       // node tip, where blocks carry inscriptions and commit every 1000.
+      #[cfg(feature = "tap")]
+      let lean = self.index.tap_lean;
+      #[cfg(not(feature = "tap"))]
+      let lean = false;
       let commit_interval =
         if !self.index.index_sats && self.height < self.index.first_inscription_height {
           HEADER_ONLY_COMMIT_INTERVAL
+        } else if lean {
+          // Each commit rewrites every page it touches and redb reuses the
+          // freed pages only a commit or two later, so the file carries about
+          // two commits of rewritten pages as free space. Lean replay commits
+          // every 100 blocks to keep that headroom small.
+          100
         } else {
           1000
         };
@@ -208,14 +218,7 @@ impl<'index> Updater<'_> {
     height: u32,
     starting_height: u32,
   ) {
-    // redb reuses pages freed by earlier commits only after a durable commit,
-    // so every fourth lean commit stays immediate; with Eventual alone the
-    // file grew by every rewritten page.
-    static LEAN_COMMITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    if index.tap_lean
-      && starting_height.saturating_sub(height) > 100
-      && LEAN_COMMITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 4 != 3
-    {
+    if index.tap_lean && starting_height.saturating_sub(height) > 100 {
       wtx.set_durability(redb::Durability::Eventual);
     }
   }
