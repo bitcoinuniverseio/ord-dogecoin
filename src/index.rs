@@ -366,6 +366,12 @@ impl Index {
         }
 
         #[cfg(feature = "tap")]
+        if let Some(backup) = &options.tap_restore_values {
+          log::info!("Restoring stored output values from {}", backup.display());
+          updater::tap_restore_values(&database, backup)?;
+        }
+
+        #[cfg(feature = "tap")]
         if options.tap_prune {
           log::info!("Pruning lean replay index at {}", path.display());
           updater::tap_prune(&database)?;
