@@ -524,3 +524,35 @@ complete preserved recovery set, fresh owned RPC, hard growth budget and lifetim
 owner before native activation. The existing original/delta ownership and failed
 legacy unit are unchanged; production integration and archive readiness remain
 pending. This identity is I1-specific and must not be assumed valid on new2.
+
+### Combined preserved-set preparation decision, 19 October 2026
+
+`deploy/archive_recovery_preparation.py` composes the existing snapshot preflight
+and dedicated identity audit. The storage worker group must be exactly 977. The
+planned hard file ceiling must equal the maximum used in reserve arithmetic,
+fit the current delta length, and stay within the storage builder's bounds.
+Reviewed capacity policy, enforced reserve and external-writer exclusion are
+separate required observations. Synthetic success cannot substitute for them.
+The result qualifies preparation only and always leaves production admission,
+native activation and native health false. It never launches or opens storage.
+
+Five focused composition tests passed on Windows and Linux. A fresh I1 audit
+held the existing owner lease while checking the preserved source/delta metadata,
+delta/runtime digests, inactive legacy owners, dedicated identity and owned RPC.
+Both routes agreed at height 6,421,407 with IBD false; the tunnel's actual
+established TCP peer was new2. Source and delta metadata stayed unchanged; no
+source content was read, native database opened or production service changed.
+
+The combined decision correctly refused five missing runtime proofs:
+source_readonly_verified, growth_exhaustion_verified, capacity_policy_reviewed,
+reserve_enforcement_verified and external_writer_exclusion_verified. Previously
+completed private namespace and synthetic growth fixtures remain valid within
+their stated scope; those namespaces ended and do not satisfy a live successor.
+Receipt: /home/universe-restore/doge-preparation-audit-v1-20261019.json. The lease
+was released after this audit. Do not rerun the completed audit as a fixture.
+
+Next implement the reviewed storage supervisor that establishes and maintains
+the private source view, hard growth limit, free-space protection and owner
+exclusion for the entire lifetime. Recollect fresh evidence under its lease;
+qualify the dedicated group's mounted export and actual native lifetime before
+opening the preserved database. Do not restart the failed legacy unit.
