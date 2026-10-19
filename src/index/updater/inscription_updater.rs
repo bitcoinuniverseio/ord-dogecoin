@@ -849,13 +849,22 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         [0u8; 34]
       };
 
-      self.value_cache.insert(
-        OutPoint {
-          vout: vout.try_into().unwrap(),
-          txid,
-        },
-        (tx_out.value, address),
-      );
+      // Lean replay keeps values only for P2SH outputs, which Doginal reveals
+      // spend; any other value a relevant transaction needs comes over RPC.
+      #[cfg(feature = "tap")]
+      let keep_value = !self.tap_index.tap_lean || tx_out.script_pubkey.is_p2sh();
+      #[cfg(not(feature = "tap"))]
+      let keep_value = true;
+
+      if keep_value {
+        self.value_cache.insert(
+          OutPoint {
+            vout: vout.try_into().unwrap(),
+            txid,
+          },
+          (tx_out.value, address),
+        );
+      }
     }
 
     if is_coinbase {
