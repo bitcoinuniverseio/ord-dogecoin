@@ -42,6 +42,15 @@ mod reorg;
 mod fetcher;
 mod rtx;
 mod updater;
+#[cfg(feature = "tap")]
+mod tap_export;
+#[cfg(feature = "tap")]
+pub(crate) use tap_export::*;
+#[cfg(feature = "tap")]
+pub(crate) use updater::inscription_updater::{
+  tap_js_json_stringify_str, tap_js_json_stringify_value, tap_js_preprocess_json_for_serde,
+  tap_js_to_lowercase,
+};
 
 pub(crate) use self::dogemap_feed::{
   FeedBlockCache, FeedBlockRequest, FeedBodyRequest, FeedFailure,
@@ -123,6 +132,15 @@ pub(crate) struct Index {
   genesis_block_coinbase_txid: Txid,
   height_limit: Option<u32>,
   index_drc20: bool,
+  #[cfg(feature = "tap")]
+  tap_writer_export: bool,
+  #[cfg(feature = "tap")]
+  tap_writer_export_rolling_state: bool,
+  #[cfg(feature = "tap")]
+  pub(crate) tap_lean: bool,
+  /// Second node for block and header fetching (replay throughput).
+  #[cfg(feature = "tap")]
+  pub(crate) tap_extra_rpc: Option<(String, Auth)>,
   index_dunes: bool,
   index_sats: bool,
   index_transactions: bool,
@@ -188,6 +206,15 @@ pub(crate) struct Info {
   pub(crate) transactions: Vec<TransactionInfo>,
   pub(crate) tree_height: u32,
   pub(crate) utxos_indexed: u64,
+  pub(crate) tables: std::collections::BTreeMap<String, TableSize>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct TableSize {
+  pub(crate) entries: u64,
+  pub(crate) stored_bytes: u64,
+  pub(crate) leaf_pages: u64,
+  pub(crate) fragmented_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -338,6 +365,29 @@ impl Index {
             != 0;
         }
 
+        #[cfg(feature = "tap")]
+        if let Some(backup) = &options.tap_restore_values {
+          log::info!("Restoring stored output values from {}", backup.display());
+          updater::tap_restore_values(&database, backup)?;
+        }
+
+        #[cfg(feature = "tap")]
+        if options.tap_prune {
+          log::info!("Pruning lean replay index at {}", path.display());
+          updater::tap_prune(&database)?;
+        }
+
+        #[cfg(feature = "tap")]
+        let database = if options.tap_compact {
+          let mut database = database;
+          log::info!("Compacting index at {}", path.display());
+          let compacted = database.compact()?;
+          log::info!("Compaction finished (changed: {compacted})");
+          database
+        } else {
+          database
+        };
+
         database
       }
       Err(DatabaseError::Storage(StorageError::Io(error)))
@@ -420,6 +470,17 @@ impl Index {
       genesis_block_coinbase_transaction,
       height_limit: options.height_limit,
       index_drc20,
+      #[cfg(feature = "tap")]
+      tap_writer_export: options.tap_writer_export,
+      #[cfg(feature = "tap")]
+      tap_writer_export_rolling_state: options.tap_writer_export && options.tap_writer_export_rolling_state,
+      #[cfg(feature = "tap")]
+      tap_lean: options.tap_lean,
+      #[cfg(feature = "tap")]
+      tap_extra_rpc: match (&options.tap_extra_rpc_url, &options.tap_extra_cookie_file) {
+        (Some(url), Some(cookie)) => Some((url.clone(), Auth::CookieFile(cookie.clone()))),
+        _ => None,
+      },
       index_dunes,
       index_sats,
       index_transactions,
@@ -616,7 +677,39 @@ impl Index {
           )
         })
         .collect::<Result<Vec<_>, _>>()?;
+      let mut tables = std::collections::BTreeMap::new();
+      for handle in rtx.list_tables()? {
+        use redb::TableHandle;
+        let name = handle.name().to_string();
+        let table = rtx.open_untyped_table(handle)?;
+        let table_stats = table.stats()?;
+        tables.insert(
+          name,
+          TableSize {
+            entries: table.len()?,
+            stored_bytes: table_stats.stored_bytes(),
+            leaf_pages: table_stats.leaf_pages(),
+            fragmented_bytes: table_stats.fragmented_bytes(),
+          },
+        );
+      }
+      for handle in rtx.list_multimap_tables()? {
+        use redb::MultimapTableHandle;
+        let name = handle.name().to_string();
+        let table = rtx.open_untyped_multimap_table(handle)?;
+        let table_stats = table.stats()?;
+        tables.insert(
+          name,
+          TableSize {
+            entries: table.len()?,
+            stored_bytes: table_stats.stored_bytes(),
+            leaf_pages: table_stats.leaf_pages(),
+            fragmented_bytes: table_stats.fragmented_bytes(),
+          },
+        );
+      }
       Info {
+        tables,
         index_path: self.path.clone(),
         blocks_indexed: rtx
           .open_table(HEIGHT_TO_BLOCK_HASH)?

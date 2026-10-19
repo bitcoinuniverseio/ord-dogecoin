@@ -1,0 +1,642 @@
+use serde::{Deserialize, Serialize};
+
+// Bitmap
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct BitmapRecord {
+  pub(crate) ownr: String,
+  pub(crate) prv: Option<String>,
+  pub(crate) bm: u64,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+// Deploy
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct DeployRecord {
+  pub(crate) tick: String,
+  pub(crate) max: String,
+  pub(crate) lim: String,
+  pub(crate) dec: u32,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) addr: String,
+  pub(crate) crsd: bool,
+  pub(crate) dmt: bool,
+  pub(crate) elem: Option<String>,
+  pub(crate) prj: Option<String>,
+  pub(crate) dim: Option<String>,
+  pub(crate) dt: Option<String>,
+  pub(crate) prv: Option<String>,
+  pub(crate) dta: Option<String>,
+}
+
+// Mint
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct MintRecord {
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) bal: String,
+  #[serde(default)]
+  pub(crate) tx: Option<String>,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  #[serde(default)]
+  pub(crate) ins: Option<String>,
+  #[serde(default)]
+  pub(crate) num: Option<i32>,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  #[serde(default)]
+  pub(crate) dmtblck: Option<u32>,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct MintFlatRecord {
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) bal: String,
+  #[serde(default)]
+  pub(crate) tx: Option<String>,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  #[serde(default)]
+  pub(crate) ins: Option<String>,
+  #[serde(default)]
+  pub(crate) num: Option<i32>,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  #[serde(default)]
+  pub(crate) dmtblck: Option<u32>,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct MintSuperflatRecord {
+  pub(crate) tick: String,
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) bal: String,
+  #[serde(default)]
+  pub(crate) tx: Option<String>,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  #[serde(default)]
+  pub(crate) ins: Option<String>,
+  #[serde(default)]
+  pub(crate) num: Option<i32>,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  #[serde(default)]
+  pub(crate) dmtblck: Option<u32>,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+// Transfer (init + executed)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferInitRecord {
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferInitFlatRecord {
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferInitSuperflatRecord {
+  pub(crate) tick: String,
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferSendSenderRecord {
+  pub(crate) addr: String,
+  pub(crate) taddr: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) at: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tt: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) st: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rl: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rf: Option<String>,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferSendReceiverRecord {
+  pub(crate) faddr: String,
+  pub(crate) addr: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) at: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tt: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) st: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rl: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rf: Option<String>,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferSendFlatRecord {
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tick: Option<String>,
+  pub(crate) addr: String,
+  pub(crate) taddr: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) at: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tt: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) st: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rl: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rf: Option<String>,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tbal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TransferSendSuperflatRecord {
+  pub(crate) tick: String,
+  pub(crate) addr: String,
+  pub(crate) taddr: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) at: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tt: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) st: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rl: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rf: Option<String>,
+  pub(crate) blck: u32,
+  pub(crate) amt: String,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tbal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+  pub(crate) int: bool,
+  #[serde(default)]
+  pub(crate) dta: Option<String>,
+}
+
+// Trade
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TradeOfferRecord {
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) atick: String,
+  pub(crate) aamt: String,
+  pub(crate) vld: i64,
+  pub(crate) trf: String,
+  pub(crate) bal: String,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TradeBuySellerRecord {
+  pub(crate) addr: String,
+  pub(crate) saddr: String,
+  pub(crate) blck: u32,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) stick: String,
+  pub(crate) samt: String,
+  pub(crate) fee: String,
+  #[serde(default)]
+  pub(crate) fee_rcv: Option<String>,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) sins: String,
+  pub(crate) snum: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TradeBuyBuyerRecord {
+  pub(crate) baddr: String,
+  pub(crate) addr: String,
+  pub(crate) blck: u32,
+  pub(crate) btick: String,
+  pub(crate) bamt: String,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) fee: String,
+  #[serde(default)]
+  pub(crate) fee_rcv: Option<String>,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) bins: String,
+  pub(crate) bnum: i32,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) fail: bool,
+}
+
+// Privilege verify
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct PrivilegeVerifiedRecord {
+  pub(crate) ownr: String,
+  #[serde(default)]
+  pub(crate) prv: Option<String>,
+  pub(crate) name: String,
+  #[serde(rename = "priv")]
+  pub(crate) privf: String,
+  pub(crate) col: String,
+  pub(crate) vrf: String,
+  pub(crate) seq: i64,
+  pub(crate) slt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+// Accumulator
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TapAccumulatorEntry {
+  pub(crate) op: String,
+  pub(crate) json: serde_json::Value,
+  pub(crate) ins: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) val: Option<String>,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  pub(crate) addr: String,
+}
+
+// Token auth
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenAuthCreateRecord {
+  pub(crate) addr: String,
+  pub(crate) auth: Vec<String>,
+  pub(crate) sig: serde_json::Value,
+  pub(crate) hash: String,
+  pub(crate) slt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenAuthRedeemRecord {
+  pub(crate) addr: String,
+  pub(crate) iaddr: String,
+  pub(crate) rdm: serde_json::Value,
+  pub(crate) sig: serde_json::Value,
+  pub(crate) hash: String,
+  pub(crate) slt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+// START TAP-PROOFS
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenLockFeeRecord {
+  pub(crate) addr: String,
+  pub(crate) amt: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenAllocationRecord {
+  pub(crate) tt: String,
+  pub(crate) to: String,
+  pub(crate) amt: String,
+  pub(crate) rl: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenLockRecord {
+  pub(crate) id: String,
+  pub(crate) owner: String,
+  pub(crate) auth: String,
+  pub(crate) kind: String,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) remaining: String,
+  pub(crate) claim: String,
+  #[serde(default)]
+  pub(crate) refund: Option<String>,
+  pub(crate) condition: serde_json::Value,
+  #[serde(default)]
+  pub(crate) refund_after: Option<u32>,
+  #[serde(default)]
+  pub(crate) data: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) control: Option<serde_json::Value>,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) fee: Option<TokenLockFeeRecord>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) al: Option<Vec<TokenAllocationRecord>>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) total: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenLockConsumeRecord {
+  pub(crate) lock: String,
+  pub(crate) action: String,
+  pub(crate) kind: String,
+  pub(crate) owner: String,
+  pub(crate) target: String,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) fee: Option<TokenLockFeeRecord>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) al: Option<Vec<TokenAllocationRecord>>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) total: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) cert: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct AuthorityConfigRecord {
+  pub(crate) id: String,
+  pub(crate) k: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) n: Option<String>,
+  #[serde(default, skip_serializing_if = "String::is_empty")]
+  pub(crate) stk: String,
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub(crate) rt: Vec<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) st: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) pt: Option<String>,
+  pub(crate) ctl: serde_json::Value,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) tre: Option<serde_json::Value>,
+  pub(crate) seq: u32,
+  #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+  pub(crate) r: serde_json::Value,
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub(crate) a: Vec<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
+  pub(crate) ak: Vec<String>,
+  #[serde(default, skip_serializing_if = "String::is_empty")]
+  pub(crate) sh: String,
+  #[serde(default, skip_serializing_if = "String::is_empty")]
+  pub(crate) fee: String,
+  #[serde(default, skip_serializing_if = "String::is_empty")]
+  pub(crate) pf: String,
+  #[serde(default, skip_serializing_if = "String::is_empty")]
+  pub(crate) min: String,
+  #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+  pub(crate) p: bool,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) pp: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) att: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) xs: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) s: Option<serde_json::Value>,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct StakePositionRecord {
+  pub(crate) id: String,
+  pub(crate) auth: String,
+  pub(crate) addr: String,
+  pub(crate) claim: String,
+  pub(crate) tick: String,
+  pub(crate) amt: String,
+  pub(crate) tier: String,
+  pub(crate) shares: String,
+  pub(crate) uh: u32,
+  pub(crate) debt: serde_json::Value,
+  pub(crate) status: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) closed_blck: Option<u32>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) closed_tx: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct RewardClaimRecord {
+  pub(crate) auth: String,
+  pub(crate) pos: String,
+  pub(crate) rt: String,
+  pub(crate) claim: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) exec: Option<String>,
+  pub(crate) amt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct TokenDelegationCancelRecord {
+  pub(crate) auth: String,
+  pub(crate) nonce: String,
+  pub(crate) addr: String,
+  pub(crate) iaddr: String,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) rdm: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) sig: Option<serde_json::Value>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) hash: Option<String>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub(crate) slt: Option<String>,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}
+// END TAP-PROOFS
+
+// Privilege auth
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct PrivilegeAuthCreateRecord {
+  pub(crate) addr: String,
+  pub(crate) auth: serde_json::Value,
+  pub(crate) sig: serde_json::Value,
+  pub(crate) hash: String,
+  pub(crate) slt: String,
+  pub(crate) blck: u32,
+  pub(crate) tx: String,
+  pub(crate) vo: u32,
+  pub(crate) val: String,
+  pub(crate) ins: String,
+  pub(crate) num: i32,
+  pub(crate) ts: u32,
+}

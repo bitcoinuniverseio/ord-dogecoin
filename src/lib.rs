@@ -103,6 +103,13 @@ macro_rules! tprintln {
     };
 }
 
+// TAP-DOGE engine (ported from ord-tap) names these crates directly; they are
+// renamed in Cargo.toml because bitcoin 0.29 pins an older secp256k1.
+#[cfg(feature = "tap")]
+extern crate tap_secp256k1 as secp256k1;
+#[cfg(feature = "tap")]
+extern crate tap_sha2 as sha2;
+
 mod arguments;
 pub mod authority_api;
 mod blocktime;

@@ -6,6 +6,51 @@ use crate::sat_point::SatPoint;
 
 use super::*;
 
+#[cfg(feature = "tap")]
+mod tap;
+/// TAP_KV row holding the lean replay's next inscription number (u64 LE).
+#[cfg(feature = "tap")]
+pub(crate) const TAP_LEAN_NEXT_NUMBER_KEY: &[u8] = b"_lean/next_number";
+#[cfg(feature = "tap")]
+mod tap_glue;
+#[cfg(feature = "tap")]
+#[allow(unused_imports)]
+pub(crate) use tap::{
+  tap_js_json_stringify_str,
+  tap_js_json_stringify_value,
+  tap_js_preprocess_json_for_serde,
+  tap_js_to_lowercase,
+  // records
+  BitmapRecord,
+  DeployRecord,
+  DmtElementRecord,
+  MintFlatRecord,
+  MintRecord,
+  MintSuperflatRecord,
+  PrivilegeVerifiedRecord,
+  TapAccumulatorEntry,
+  TapBatch,
+  TapDeltaBatch,
+  TapFeature,
+  TapRoute,
+  TapRouteIndex,
+  TapRouteRebuildStats,
+  TokenAuthCreateRecord,
+  TokenAuthRedeemRecord,
+  TradeBuyBuyerRecord,
+  TradeBuySellerRecord,
+  TradeOfferRecord,
+  TransferInitFlatRecord,
+  TransferInitRecord,
+  TransferInitSuperflatRecord,
+  TransferSendFlatRecord,
+  TransferSendReceiverRecord,
+  TransferSendSenderRecord,
+  TransferSendSuperflatRecord,
+  BURN_ADDRESS,
+  MAX_DEC_U64_STR,
+};
+
 pub(super) struct Flotsam {
   txid: Txid,
   /// Position of `txid` in its block.
@@ -52,6 +97,193 @@ pub(super) struct InscriptionUpdater<'a, 'tx> {
   current_tx_index: u32,
   /// Dogemap feed journal rows for this block.
   pub(super) journal: JournalRecorder,
+  // TAP-DOGE engine state (ported from ord-tap; see docs/TAP-DOGE-ENGINE-PLAN.md).
+  #[cfg(feature = "tap")]
+  pub(super) tap_db: TapBatch<'a, 'tx>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_delta_db: Option<TapDeltaBatch<'a, 'tx>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_writes: Option<Vec<String>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_overlay: Option<HashMap<String, Option<(Vec<u8>, serde_json::Value)>>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_atomic_list_len_cache: Option<HashMap<String, usize>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_route_index: Option<std::rc::Rc<std::cell::RefCell<TapRouteIndex>>>,
+  #[cfg(feature = "tap")]
+  pub(super) tap_route_index_verify: bool,
+  #[cfg(feature = "tap")]
+  pub(super) list_len_cache: HashMap<String, usize>,
+  #[cfg(feature = "tap")]
+  pub(super) block_availability_cache: HashMap<String, bool>,
+  #[cfg(feature = "tap")]
+  pub(super) btc_network: bitcoin::Network,
+  #[cfg(feature = "tap")]
+  pub(super) tap_index: &'a Index,
+  /// Lean replay: outpoints whose values were requested from the fetcher this
+  /// block, consumed in request order.
+  #[cfg(feature = "tap")]
+  pub(super) tap_prefetched: HashSet<OutPoint>,
+  #[cfg(feature = "tap")]
+  pub(super) profile: bool,
+  #[cfg(feature = "tap")]
+  pub(super) delegate_cache: HashMap<InscriptionId, bool>,
+  #[cfg(feature = "tap")]
+  pub(super) delegate_payload_cache: HashMap<InscriptionId, Inscription>,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_tr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_tr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_ex_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_ex_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_created_total_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_created_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_bm_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_el_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmt_el_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dpl_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dpl_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtmint_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtmint_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_mint_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_mint_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttr_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tsend_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_ttrade_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_tauth_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtdep_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_dmtdep_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_pra_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_prv_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_blk_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_cr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_unblk_cr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_env_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_old_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_new_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_parent_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_txdb_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_addr_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_update_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_event_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_event_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_old_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_new_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_txdb_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_addr_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_update_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_old_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_old_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_ms: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_ct: u64,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_parents_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_entry_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_serialize_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_maps_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_num_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_sat_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_new_delegate_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_tap_us: u128,
+  #[cfg(feature = "tap")]
+  pub(super) prof_core_up_utxo_us: u128,
 }
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
@@ -76,6 +308,8 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     timestamp: u32,
     value_cache: &'a mut HashMap<OutPoint, OutPointMapValue>,
     chain: Chain,
+    #[cfg(feature = "tap")] tap_kv: &'a mut Table<'tx, &'static [u8], &'static [u8]>,
+    #[cfg(feature = "tap")] tap_index: &'a Index,
   ) -> Result<Self> {
     let next_number = number_to_id
       .iter()?
@@ -84,6 +318,17 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       .next()
       .transpose()?
       .unwrap_or(0);
+
+    // Lean replay records numbers only for TAP-readable inscriptions, so the
+    // running counter is also kept in TAP_KV and the larger of the two wins.
+    #[cfg(feature = "tap")]
+    let next_number = next_number.max(
+      tap_kv
+        .get(TAP_LEAN_NEXT_NUMBER_KEY)?
+        .and_then(|value| <[u8; 8]>::try_from(value.value()).ok())
+        .map(u64::from_le_bytes)
+        .unwrap_or(0),
+    );
 
     Ok(Self {
       flotsam: Vec::new(),
@@ -113,6 +358,190 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
       current_txid: Txid::all_zeros(),
       current_tx_index: 0,
       journal: JournalRecorder::default(),
+      #[cfg(feature = "tap")]
+      tap_db: TapBatch::new(tap_kv),
+      #[cfg(feature = "tap")]
+      tap_delta_db: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_writes: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_overlay: None,
+      #[cfg(feature = "tap")]
+      tap_atomic_list_len_cache: None,
+      #[cfg(feature = "tap")]
+      tap_route_index: None,
+      #[cfg(feature = "tap")]
+      tap_route_index_verify: false,
+      #[cfg(feature = "tap")]
+      list_len_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      block_availability_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      btc_network: chain.network(),
+      #[cfg(feature = "tap")]
+      tap_index,
+      #[cfg(feature = "tap")]
+      tap_prefetched: HashSet::new(),
+      #[cfg(feature = "tap")]
+      profile: false,
+      #[cfg(feature = "tap")]
+      delegate_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      delegate_payload_cache: HashMap::new(),
+      #[cfg(feature = "tap")]
+      prof_bm_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_tr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_tr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_ex_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_ex_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_created_total_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_created_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_bm_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_el_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmt_el_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dpl_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dpl_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtmint_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtmint_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_mint_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_mint_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttr_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tsend_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_ttrade_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_tauth_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtdep_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_dmtdep_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_pra_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_prv_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_blk_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_cr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_unblk_cr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_env_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_old_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_new_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_parent_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_txdb_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_addr_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_update_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_event_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_event_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_old_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_new_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_txdb_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_addr_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_update_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_old_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_old_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_ms: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_ct: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_parents_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_entry_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_serialize_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_maps_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_num_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_sat_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_new_delegate_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_tap_us: 0,
+      #[cfg(feature = "tap")]
+      prof_core_up_utxo_us: 0,
     })
   }
 
@@ -136,6 +565,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
       self.transaction_buffer.clear();
     }
+
+    // Lean replay: only a transaction that moves, creates or continues an
+    // inscription needs its input values; others are skipped (they only feed
+    // the fee total behind the offset of an inscription lost to fees).
+    #[cfg(feature = "tap")]
+    let lean_relevant = !self.tap_index.tap_lean || self.tap_lean_tx_relevant(tx)?;
 
     let mut input_value = 0;
     for tx_in in &tx.input {
@@ -193,12 +628,33 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           }
           map.value()
         } else {
-          self.value_receiver.blocking_recv().ok_or_else(|| {
-            anyhow!(
-              "failed to get transaction for {}",
-              tx_in.previous_output.txid
-            )
-          })?
+          #[cfg(feature = "tap")]
+          let from_fetcher =
+            !self.tap_index.tap_lean || self.tap_prefetched.remove(&tx_in.previous_output);
+          #[cfg(not(feature = "tap"))]
+          let from_fetcher = true;
+
+          if from_fetcher {
+            self.value_receiver.blocking_recv().ok_or_else(|| {
+              anyhow!(
+                "failed to get transaction for {}",
+                tx_in.previous_output.txid
+              )
+            })?
+          } else {
+            #[cfg(feature = "tap")]
+            {
+              if lean_relevant {
+                Self::tap_fetch_output_value(self.tap_index, tx_in.previous_output)?
+              } else {
+                0
+              }
+            }
+            #[cfg(not(feature = "tap"))]
+            {
+              unreachable!()
+            }
+          }
         }
       }
     }
@@ -272,11 +728,26 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
             .partial_txid_to_txids
             .remove(&previous_txid_bytes.as_slice())?;
 
-          let mut tx_buf = vec![];
-          tx.consensus_encode(&mut tx_buf)?;
-          self
-            .txid_to_tx
-            .insert(&txid.into_inner().as_slice(), tx_buf.as_slice())?;
+          // TAP-DOGE lean replay: stored content is only read back to resolve
+          // a TAP op's delegate, and a delegate target must itself be a TAP op
+          // (or a dogemap claim), so only such content is kept.
+          #[cfg(feature = "tap")]
+          let keep_content = !self.tap_index.tap_lean
+            || Self::tap_lean_keeps_content(&_inscription);
+          #[cfg(not(feature = "tap"))]
+          let keep_content = true;
+
+          if keep_content {
+            let mut tx_buf = vec![];
+            tx.consensus_encode(&mut tx_buf)?;
+            self
+              .txid_to_tx
+              .insert(&txid.into_inner().as_slice(), tx_buf.as_slice())?;
+          } else {
+            for i in 0..txids_vec.len() / 32 {
+              self.txid_to_tx.remove(&txids_vec[i * 32..i * 32 + 32])?;
+            }
+          }
 
           let mut txid_vec = txid.into_inner().to_vec();
           txids_vec.append(&mut txid_vec);
@@ -285,9 +756,12 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           unsafe {
             std::ptr::copy_nonoverlapping(txids_vec.as_ptr(), inscription_id.as_mut_ptr(), 32)
           }
-          self
-            .id_to_txids
-            .insert(&inscription_id, txids_vec.as_slice())?;
+          // Lean replay: the txid list only serves content lookups.
+          if keep_content {
+            self
+              .id_to_txids
+              .insert(&inscription_id, txids_vec.as_slice())?;
+          }
 
           let og_inscription_id = InscriptionId {
             txid: Txid::from_slice(&txids_vec[0..32]).unwrap(),
@@ -331,10 +805,16 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     let mut output_value = 0;
     for (vout, tx_out) in tx.output.iter().enumerate() {
       let end = output_value + tx_out.value;
+      #[cfg(feature = "tap")]
+      let mut receives_inscription = false;
 
       while let Some(flotsam) = inscriptions.peek() {
         if flotsam.offset >= end {
           break;
+        }
+        #[cfg(feature = "tap")]
+        {
+          receives_inscription = true;
         }
 
         let new_satpoint = SatPoint {
@@ -355,19 +835,40 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
 
       output_value = end;
 
-      let address_from_script = self
-        .chain
-        .address_from_script(&tx_out.clone().script_pubkey);
+      // Lean replay writes no address index, so the per-output Base58
+      // encoding (most of its CPU time in DRC-20-era blocks) is skipped.
+      #[cfg(feature = "tap")]
+      let encode_address = !self.tap_index.tap_lean;
+      #[cfg(not(feature = "tap"))]
+      let encode_address = true;
 
-      let address = if address_from_script.is_err() {
-        [0u8; 34]
+      let address = if encode_address {
+        match self.chain.address_from_script(&tx_out.script_pubkey) {
+          Ok(address) => address
+            .to_string()
+            .as_bytes()
+            .try_into()
+            .unwrap_or([0u8; 34]),
+          Err(_) => [0u8; 34],
+        }
       } else {
-        address_from_script
-          .unwrap()
-          .to_string()
-          .as_bytes()
-          .try_into()
-          .unwrap_or([0u8; 34])
+        [0u8; 34]
+      };
+
+      // Lean replay writes no address index, so the address bytes carry a
+      // persist flag instead: only outputs that carry an inscription (spent by
+      // later transfers) and outputs of transactions with a P2SH output
+      // (Doginal commits, whose P2SH and change outputs reveals spend) are
+      // written at commit. The rest stay in memory until then.
+      #[cfg(feature = "tap")]
+      let address = if self.tap_index.tap_lean {
+        let mut flag = [0u8; 34];
+        flag[0] = u8::from(
+          receives_inscription || tx.output.iter().any(|out| out.script_pubkey.is_p2sh()),
+        );
+        flag
+      } else {
+        address
       };
 
       self.value_cache.insert(
@@ -375,7 +876,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           vout: vout.try_into().unwrap(),
           txid,
         },
-        (tx_out.clone().value, address),
+        (tx_out.value, address),
       );
     }
 
@@ -422,9 +923,21 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         fee,
         inscription: _,
       } => {
-        self
-          .number_to_id
-          .insert(&self.next_number, &inscription_id)?;
+        // Lean replay: number->id only for TAP-readable inscriptions; the
+        // counter itself persists in TAP_KV (TAP_LEAN_NEXT_NUMBER_KEY).
+        #[cfg(feature = "tap")]
+        let record_number = !self.tap_index.tap_lean
+          || match &flotsam.origin {
+            Origin::New { inscription, .. } => Self::tap_lean_keeps_content(inscription),
+            Origin::Old(_) => true,
+          };
+        #[cfg(not(feature = "tap"))]
+        let record_number = true;
+        if record_number {
+          self
+            .number_to_id
+            .insert(&self.next_number, &inscription_id)?;
+        }
 
         let mut sat = None;
         if let Some(input_sat_ranges) = input_sat_ranges {
@@ -441,18 +954,31 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
           }
         }
 
-        self.id_to_entry.insert(
-          &inscription_id,
-          &InscriptionEntry {
-            fee,
-            height: self.height,
-            inscription_number: self.next_number,
-            sat,
-            sequence_number: 0,
-            timestamp: self.timestamp,
-          }
-          .store(),
-        )?;
+        // Lean replay: full entries only for inscriptions TAP can read back
+        // (TAP ops and dogemap claims); every inscription keeps its number and
+        // location, so numbering and the offset-zero rule stay exact.
+        #[cfg(feature = "tap")]
+        let store_entry = !self.tap_index.tap_lean
+          || match &flotsam.origin {
+            Origin::New { inscription, .. } => Self::tap_lean_keeps_content(inscription),
+            Origin::Old(_) => true,
+          };
+        #[cfg(not(feature = "tap"))]
+        let store_entry = true;
+        if store_entry {
+          self.id_to_entry.insert(
+            &inscription_id,
+            &InscriptionEntry {
+              fee,
+              height: self.height,
+              inscription_number: self.next_number,
+              sat,
+              sequence_number: 0,
+              timestamp: self.timestamp,
+            }
+            .store(),
+          )?;
+        }
 
         self.next_number += 1;
       }
@@ -489,6 +1015,65 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         });
 
     let destination = dogemap_feed::destination(tx, _satpoint)?;
+
+    // TAP-DOGE hooks (ord-tap parity): owner "-" and value 0 for an inscription
+    // lost to fees, "-" for an OP_RETURN output, else the output's address.
+    #[cfg(feature = "tap")]
+    {
+      let (owner_address, output_value_sat, op_return) = match &destination {
+        dogemap_feed::JournalDestination::Assigned {
+          value,
+          script_pubkey,
+          ..
+        } => {
+          let script = Script::from(script_pubkey.clone());
+          if script.is_op_return() {
+            ("-".to_string(), *value, true)
+          } else {
+            (
+              self
+                .chain
+                .address_from_script(&script)
+                .map(|address| address.to_string())
+                .unwrap_or_else(|_| "-".to_string()),
+              *value,
+              false,
+            )
+          }
+        }
+        dogemap_feed::JournalDestination::Lost { .. } => ("-".to_string(), 0, false),
+      };
+      let index = self.tap_index;
+      match &flotsam.origin {
+        Origin::Old(old_satpoint) => self.tap_on_inscription_transferred(
+          flotsam.inscription_id,
+          0,
+          *old_satpoint,
+          _satpoint,
+          op_return,
+          &owner_address,
+          output_value_sat,
+        ),
+        Origin::New { fee, inscription } => self.tap_on_inscription_created(
+          flotsam.inscription_id,
+          0,
+          i32::try_from(self.next_number - 1).unwrap_or(i32::MAX),
+          _satpoint,
+          inscription,
+          &[],
+          false,
+          false,
+          false,
+          false,
+          false,
+          op_return,
+          *fee,
+          &owner_address,
+          output_value_sat,
+          index,
+        ),
+      }
+    }
     match &flotsam.origin {
       Origin::Old(_) => {
         let inscription_number = self
@@ -516,7 +1101,16 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
     }
 
     self.satpoint_to_id.insert(&new_satpoint, &inscription_id)?;
-    self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
+    // Lean replay: the id->location lookup is kept only for inscriptions TAP
+    // reads back (those with a stored entry); location tracking itself is the
+    // satpoint->id table above, kept for every inscription.
+    #[cfg(feature = "tap")]
+    let track_id = !self.tap_index.tap_lean || self.id_to_entry.get(&inscription_id)?.is_some();
+    #[cfg(not(feature = "tap"))]
+    let track_id = true;
+    if track_id {
+      self.id_to_satpoint.insert(&inscription_id, &new_satpoint)?;
+    }
 
     Ok(())
   }
