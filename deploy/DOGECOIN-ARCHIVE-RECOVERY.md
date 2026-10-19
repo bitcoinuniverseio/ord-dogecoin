@@ -625,3 +625,50 @@ reservation. Next review bounded storage allocation and the required reserve
 against live production growth, without remounting the live root filesystem or
 interrupting its services. Integrate the resulting policy with the lease-bound
 source view and exact storage plan before preserved-set native admission.
+
+### Initial bounded production recovery container prepared, 19 October 2026
+
+An initial 8 GiB container was allocated under the existing owner lease at
+/var/lib/universe-ord-dogecoin-archive/capacity-v1-20261019/container.ext4.
+Fresh guards required inactive legacy owners, no archive FUSE mount, unchanged
+preserved source/delta identities and the pinned delta digest. Allocation also
+required 300 GB plus an additional 256 GiB of host headroom after allocation.
+posix_fallocate and FIEMAP verified the complete 8,589,934,592-byte logical range
+as allocated, unwritten extents. Allocation took 34.917 seconds. The container
+is root-owned 0600 in a root-owned 0700 directory; do not allocate another one.
+
+Initialization rechecked its exact receipt identity and entirely unwritten
+extents before formatting only that new file through a held descriptor. ext4
+uses nodiscard/lazy inode and journal initialization to limit preparation I/O.
+Read-only e2fsck returned 0 and the filesystem reported clean. No live root
+filesystem was remounted or configured. The initializer must never be repeated.
+
+In a private mount/network namespace, a single working copy of the retained
+delta was placed inside that container: 393,216/393,216 bytes, SHA-256
+6dabd4c27c8a0eee1718e7516b693d4c2110f7ce83f4c4b42c0c4d692824954f.
+File and directory data were flushed; ordinary unmount and automatic loop
+detach were verified. No QEMU storage process or native database operation ran.
+Source and preserved delta metadata stayed unchanged; source content reads were
+zero. The original delta remains at its original path and must be preserved.
+
+Receipts under /home/universe-restore/:
+doge-bounded-container-allocation-v1-20261019.json,
+doge-bounded-container-format-v1-20261019.json,
+doge-bounded-delta-copy-v1-20261019.json,
+doge-bounded-container-identity-v1-20261019.json.
+The last receipt privately pins the clean filesystem UUID, outer container
+identity and working-delta inode/digest. Loop device numbers are transient and
+must not be used as persistent identity. Do not repeat the copy or initializer.
+
+After copy, host free space was 1,054,211,002,368 bytes and inner free space was
+8,466,796,544 bytes. This reserves an initial bounded container allocation for
+the recovery workspace; it does not enforce a global 300 GB host reserve or
+prove that 8 GiB suffices for archive recovery. No automatic growth is enabled.
+Production admission and native/application readiness remain false.
+
+Next use the existing container and working delta in the reviewed namespace
+supervisor. Bind the outer file/clean filesystem UUID to fresh inner identities,
+validate exclusive ownership and current owned RPC, and integrate the private
+read-only source plus storage/export/lifetime guards. Future admission must use
+this bounded workspace's actual capacity, not the earlier illustrative 600 GB
+budget. Never open the preserved original or restart the failed legacy unit.
