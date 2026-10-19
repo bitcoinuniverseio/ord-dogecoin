@@ -10,7 +10,7 @@ use super::*;
 mod tap;
 /// TAP_KV row holding the lean replay's next inscription number (u64 LE).
 #[cfg(feature = "tap")]
-const TAP_LEAN_NEXT_NUMBER_KEY: &[u8] = b"_lean/next_number";
+pub(crate) const TAP_LEAN_NEXT_NUMBER_KEY: &[u8] = b"_lean/next_number";
 #[cfg(feature = "tap")]
 mod tap_glue;
 #[cfg(feature = "tap")]

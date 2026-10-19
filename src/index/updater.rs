@@ -1151,3 +1151,147 @@ impl<'index> Updater<'_> {
     Ok(())
   }
 }
+
+/// One-off lean replay maintenance (`--tap-prune`): drops index rows the lean
+/// replay never reads, most of them written before lean filtering existed.
+/// Stored values are refetched over RPC when needed; content is kept only for
+/// TAP-readable inscriptions and unfinished partial chains, matching what lean
+/// replay stores today.
+#[cfg(feature = "tap")]
+pub(crate) fn tap_prune(database: &Database) -> Result {
+  use std::collections::HashSet;
+
+  let mut wtx = database.begin_write()?;
+  wtx.set_durability(redb::Durability::Immediate);
+
+  {
+    let mut tap_kv = wtx.open_table(TAP_KV)?;
+    let numbers = wtx.open_table(INSCRIPTION_NUMBER_TO_INSCRIPTION_ID)?;
+    let after_last = numbers
+      .last()?
+      .map(|(number, _)| number.value() + 1)
+      .unwrap_or(0);
+    let stored = tap_kv
+      .get(inscription_updater::TAP_LEAN_NEXT_NUMBER_KEY)?
+      .and_then(|value| <[u8; 8]>::try_from(value.value()).ok())
+      .map(u64::from_le_bytes)
+      .unwrap_or(0);
+    let next = stored.max(after_last);
+    tap_kv.insert(
+      inscription_updater::TAP_LEAN_NEXT_NUMBER_KEY,
+      next.to_le_bytes().as_slice(),
+    )?;
+    log::info!("tap-prune: next inscription number {next} (stored {stored}, table {after_last})");
+  }
+
+  let removed_values = wtx.open_table(OUTPOINT_TO_VALUE)?.len()?;
+  wtx.delete_table(OUTPOINT_TO_VALUE)?;
+  wtx.open_table(OUTPOINT_TO_VALUE)?;
+  log::info!("tap-prune: dropped {removed_values} stored output values");
+
+  let mut referenced: HashSet<[u8; 32]> = HashSet::new();
+  {
+    let partials = wtx.open_table(PARTIAL_TXID_TO_INSCRIPTION_TXIDS)?;
+    for row in partials.iter()? {
+      let (key, txids) = row?;
+      if let Ok(key) = <[u8; 32]>::try_from(key.value()) {
+        referenced.insert(key);
+      }
+      for chunk in txids.value().chunks_exact(32) {
+        referenced.insert(chunk.try_into().unwrap());
+      }
+    }
+  }
+
+  let mut drop_ids: Vec<InscriptionIdValue> = Vec::new();
+  let mut kept_ids: HashSet<InscriptionIdValue> = HashSet::new();
+  {
+    let id_to_txids = wtx.open_table(INSCRIPTION_ID_TO_TXIDS)?;
+    let txid_to_tx = wtx.open_table(INSCRIPTION_TXID_TO_TX)?;
+    for row in id_to_txids.iter()? {
+      let (id, txids) = row?;
+      let mut txs = Vec::new();
+      let mut complete = true;
+      for chunk in txids.value().chunks_exact(32) {
+        match txid_to_tx.get(chunk)? {
+          Some(tx) => txs.push(bitcoin::Transaction::consensus_decode(
+            &mut std::io::Cursor::new(tx.value()),
+          )?),
+          None => {
+            complete = false;
+            break;
+          }
+        }
+      }
+      let keep = complete
+        && matches!(
+          Inscription::from_transactions(txs),
+          ParsedInscription::Complete(inscription)
+            if InscriptionUpdater::tap_lean_keeps_content(&inscription)
+        );
+      if keep {
+        kept_ids.insert(*id.value());
+        for chunk in txids.value().chunks_exact(32) {
+          referenced.insert(chunk.try_into().unwrap());
+        }
+      } else {
+        drop_ids.push(*id.value());
+      }
+    }
+  }
+  {
+    let mut id_to_txids = wtx.open_table(INSCRIPTION_ID_TO_TXIDS)?;
+    for id in &drop_ids {
+      id_to_txids.remove(id)?;
+    }
+  }
+  log::info!(
+    "tap-prune: kept content of {} inscriptions, dropped {}",
+    kept_ids.len(),
+    drop_ids.len()
+  );
+  drop(drop_ids);
+
+  let mut drop_txids: Vec<Vec<u8>> = Vec::new();
+  {
+    let txid_to_tx = wtx.open_table(INSCRIPTION_TXID_TO_TX)?;
+    for row in txid_to_tx.iter()? {
+      let (txid, _) = row?;
+      let keep = <[u8; 32]>::try_from(txid.value())
+        .map(|txid| referenced.contains(&txid))
+        .unwrap_or(false);
+      if !keep {
+        drop_txids.push(txid.value().to_vec());
+      }
+    }
+  }
+  {
+    let mut txid_to_tx = wtx.open_table(INSCRIPTION_TXID_TO_TX)?;
+    for txid in &drop_txids {
+      txid_to_tx.remove(txid.as_slice())?;
+    }
+  }
+  log::info!("tap-prune: dropped {} stored transactions", drop_txids.len());
+  drop(drop_txids);
+
+  let mut drop_numbers: Vec<u64> = Vec::new();
+  {
+    let numbers = wtx.open_table(INSCRIPTION_NUMBER_TO_INSCRIPTION_ID)?;
+    for row in numbers.iter()? {
+      let (number, id) = row?;
+      if !kept_ids.contains(id.value()) {
+        drop_numbers.push(number.value());
+      }
+    }
+  }
+  {
+    let mut numbers = wtx.open_table(INSCRIPTION_NUMBER_TO_INSCRIPTION_ID)?;
+    for number in &drop_numbers {
+      numbers.remove(number)?;
+    }
+  }
+  log::info!("tap-prune: dropped {} inscription numbers", drop_numbers.len());
+
+  wtx.commit()?;
+  Ok(())
+}

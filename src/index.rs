@@ -366,6 +366,12 @@ impl Index {
         }
 
         #[cfg(feature = "tap")]
+        if options.tap_prune {
+          log::info!("Pruning lean replay index at {}", path.display());
+          updater::tap_prune(&database)?;
+        }
+
+        #[cfg(feature = "tap")]
         let database = if options.tap_compact {
           let mut database = database;
           log::info!("Compacting index at {}", path.display());
