@@ -1078,7 +1078,7 @@ impl<'index> Updater<'_> {
   fn commit(
     &mut self,
     wtx: WriteTransaction,
-    #[allow(unused_mut)] mut value_cache: HashMap<OutPoint, OutPointMapValue>,
+    value_cache: HashMap<OutPoint, OutPointMapValue>,
   ) -> Result {
     log::info!(
       "Committing at block height {}, {} outputs traversed, {} in map, {} cached",
@@ -1114,15 +1114,6 @@ impl<'index> Updater<'_> {
       let address_index = !self.index.tap_lean;
       #[cfg(not(feature = "tap"))]
       let address_index = true;
-
-      // Lean replay keeps no persistent UTXO values: the few inscription
-      // moving transactions that later spend these outputs prefetch the
-      // values over RPC, and the table would otherwise grow with the whole
-      // UTXO set created since the first inscription height.
-      #[cfg(feature = "tap")]
-      if self.index.tap_lean {
-        value_cache.clear();
-      }
 
       for (outpoint, map) in value_cache {
         outpoint_to_value.insert(&outpoint.store(), map.0)?;
