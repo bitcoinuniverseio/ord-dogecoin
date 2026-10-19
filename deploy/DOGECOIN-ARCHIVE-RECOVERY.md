@@ -405,3 +405,39 @@ indexing/recovery, actual-archive compatibility or usable API readiness. Keep
 production admission closed until the reviewed lifetime launch guard binds the
 read-only source, capacity policy, dedicated identity and fresh owned RPC to
 the preserved recovery set.
+
+
+### Deterministic storage launch plan
+
+`deploy/archive_recovery_storage_plan.py` builds exact argv for prlimit, env,
+setpriv and QEMU storage-daemon. The hard and soft file-size limits are equal;
+SIGXFSZ is ignored so file-growth errors propagate through the storage layer.
+The exec chain removes CAP_SYS_RESOURCE from the capability bounding set, clears
+inheritable/ambient capabilities and enables no-new-privileges. It does not
+remove every capability needed by the root storage daemon to mount its FUSE
+export; this is not a claim of an unprivileged storage process.
+
+The graph explicitly opens source-file/raw read-only and delta-file/qcow2
+read-write, with the exact source backing node and no automatic read-only
+fallback. Block definitions use JSON. Paths must be distinct absolute normalized
+Unix paths and cannot inject comma-separated QEMU options. The caller must
+still verify real inode identities, parent safety, private source mount and
+export paths; lexical checks alone cannot reject filesystem aliases.
+
+The builder caps permitted per-file limits at 600 GB; that is a construction
+ceiling, not an approved production budget or a filesystem reservation. Admission
+must separately prove current free space, reserve and actual enforced limit.
+Exports currently use allow-other=off. Unprivileged archive access therefore
+needs a separately reviewed identity/export policy before production use.
+
+Three focused tests passed on Windows and Linux. In a new private mount/network
+namespace, the exact generated command mounted a synthetic source-backed FUSE
+view with a 1 MiB hard limit. Proc metadata confirmed read-only source and
+read-write delta descriptors, the actual soft/hard limits, absent SYS_RESOURCE
+capability, no-new-privileges and ignored SIGXFSZ. View write/sync/read passed;
+source digest stayed unchanged and qcow metadata checks reported zero errors.
+Acknowledged QMP quit produced exit 0 and mount removal before lease release.
+No original archive, retained production delta or native database was opened.
+Completed receipt: /home/universe-restore/doge-storage-plan-v1-20261019.json;
+do not rerun. Production launch/admission and unprivileged export access remain
+pending.
