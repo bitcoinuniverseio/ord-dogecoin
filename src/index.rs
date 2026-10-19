@@ -356,6 +356,17 @@ impl Index {
             != 0;
         }
 
+        #[cfg(feature = "tap")]
+        let database = if options.tap_compact {
+          let mut database = database;
+          log::info!("Compacting index at {}", path.display());
+          let compacted = database.compact()?;
+          log::info!("Compaction finished (changed: {compacted})");
+          database
+        } else {
+          database
+        };
+
         database
       }
       Err(DatabaseError::Storage(StorageError::Io(error)))
