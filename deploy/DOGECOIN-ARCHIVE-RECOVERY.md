@@ -239,3 +239,23 @@ closed until the restored owner passes the same checks.
 
 Any new consumer must use the existing owned service after readiness passes.
 There is no third-party blockchain fallback and no duplicate indexer deployment.
+
+
+### 19 October actual source read-only mount qualification
+
+At Unix 1792387588.935756 the exact retained 2,258,359,144,448-byte source
+was bind-mounted in a private mount and network namespace under the existing
+cooperating-owner lease. The view matched the original device, inode and size.
+Mount flags were ro,nosuid,nodev,noexec; both root write-only and read-write
+opens returned EROFS. Only a read-only descriptor was opened: no archive content
+read, truncation, write, unlink or native database open was attempted. Source
+and retained delta metadata remained unchanged, both legacy owners remained
+PID0, and no global mount survived namespace exit. The lease was then released.
+
+Receipt: /home/universe-restore/doge-actual-ro-view-v1-20261019.json. This
+completed one-time proof must not be rerun. It establishes actual source-view
+enforcement for that namespace, not a persistent runtime view, privileged
+external-writer exclusion or production ownership. Keep admission closed until
+the successor integrates this view and the lease for its entire lifetime, and
+independently verifies enforced growth limits and safe exhaustion behavior.
+Capacity arithmetic alone cannot satisfy that gate. No service was activated.
