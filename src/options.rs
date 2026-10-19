@@ -68,6 +68,9 @@ pub(crate) struct Options {
     help = "TAP-DOGE replay mode: skip the address index and do not keep transactions of completed inscriptions whose content is not text/plain or application/json."
   )]
   pub(crate) tap_lean: bool,
+  #[cfg(feature = "tap")]
+  #[arg(long, help = "Compact the index file before opening it, reclaiming freed pages.")]
+  pub(crate) tap_compact: bool,
   #[arg(
   long,
   help = "Track location of dunes. DUNES ARE IN AN UNFINISHED PRE-ALPHA STATE AND SUBJECT TO CHANGE AT ANY TIME."
