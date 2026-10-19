@@ -259,3 +259,28 @@ external-writer exclusion or production ownership. Keep admission closed until
 the successor integrates this view and the lease for its entire lifetime, and
 independently verifies enforced growth limits and safe exhaustion behavior.
 Capacity arithmetic alone cannot satisfy that gate. No service was activated.
+
+
+### 19 October bounded QEMU file-growth qualification
+
+A new disposable 16 MiB raw base and qcow2 overlay were tested with the installed
+QEMU 8.2.2. The writer inherited a hard 2 MiB RLIMIT_FSIZE and ignored SIGXFSZ
+so the storage error could propagate. After flushing a 512 KiB pattern, a
+separate 4 MiB write returned EFBIG. The image stayed within 2,097,152 bytes
+(2,035,712 allocated bytes). Read-only reopening verified the flushed prefix;
+qemu-img check reported zero check errors and zero corruptions. The synthetic
+base digest was unchanged. No original archive, retained delta or native
+database was opened, and no service changed.
+
+Receipt: /home/universe-restore/doge-qcow-growth-limit-v1-20261019.json; completed
+once, do not rerun. This qualifies storage refusal and retained flushed data
+for this small EFBIG case. It does not prove physical ENOSPC, native database
+error propagation/recovery, QEMU storage-daemon/FUSE lifetime integration or a
+production size limit. A per-process file-size ceiling limits each file, not
+total filesystem consumption, and does not reserve capacity against other
+writers. Keep growth_exhaustion_verified false until the native owner and
+retained-stack failure path are qualified and the actual limit is enforced for
+the writer lifetime. Do not infer readiness from this synthetic result.
+
+References: [Linux resource limits](https://www.man7.org/linux/man-pages/man2/getrlimit.2.html)
+and [QEMU image utility](https://www.qemu.org/docs/master/tools/qemu-img.html).
