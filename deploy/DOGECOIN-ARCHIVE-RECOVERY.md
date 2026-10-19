@@ -672,3 +672,47 @@ validate exclusive ownership and current owned RPC, and integrate the private
 read-only source plus storage/export/lifetime guards. Future admission must use
 this bounded workspace's actual capacity, not the earlier illustrative 600 GB
 budget. Never open the preserved original or restart the failed legacy unit.
+
+### Actual bounded storage integration qualified, 19 October 2026
+
+The existing container and working delta completed their first integrated
+storage qualification. No allocation, initialization or copy was repeated.
+The private namespace verified the outer container identity, clean filesystem
+UUID, loop backing path, inner delta inode/digest and mount flags. The delta was
+bind-mounted into the private control directory, and ReadonlySourceView bound
+the original source read-only. All these mounts were protected by LeaseGroup.
+
+The exact storage plan ran QEMU PID 1398915 with its effective hard file limit
+8,589,934,592 bytes, no-new-privileges and SYS_RESOURCE removed. Live descriptor
+inspection confirmed read-only source access and read-write working-delta
+access. The virtual export was restricted to root:GID 977 mode 0660. The actual
+UID 981/GID 977 worker, with no supplementary groups, zero capabilities and
+no-new-privileges, opened the 2,258,359,144,448-byte export read-write and performed
+fstat only. It read no content and invoked no database native operation.
+
+Acknowledged QMP shutdown exited 0. Working QCOW metadata checks returned 0
+with zero errors/corruptions, and its digest remained unchanged. Normal unmounts,
+loop detach and lease release all passed; no protected mount remains. Original
+source and preserved delta metadata were unchanged. Total runtime: 1.051 s.
+Receipt: /home/universe-restore/doge-bounded-storage-qualification-v1-20261019.json.
+Do not repeat this completed qualification. Its updated outer container identity
+supersedes the copy-stage identity because normal ext4 mount/unmount changes
+outer-file timestamps. The working delta remains the SAME copy, inode 12; loop
+device identifiers remain transient.
+
+A fresh held-lease observer scanned 946 processes and 22,703 descriptors plus
+process mappings: zero target descriptor/mapping matches, zero permission
+denials, one vanished entry. Both authenticated owned RPC routes agreed at
+height/headers 6,421,469, IBD false, and the actual SSH TCP peer was new2.
+Receipt: /home/universe-restore/doge-native-admission-observer-v1-20261019.json.
+The observer subsequently released its lease; this snapshot is not permanent
+writer exclusion or fresh admission for a later launch.
+
+I1 had 31,604,932,608 bytes of available memory and 1,054,351,986,688 bytes of host
+space. Its I/O pressure avg10 was some 36.59%, full 36.24%. These are stall-time
+samples, not scan percentages or causal attribution. Heavy archive native
+recovery remains queued to protect existing production indexing. Next implement
+the persistent recovery supervisor with fresh owner/RPC/capacity checks, bounded
+workspace identity and a conservative I/O admission gate. No deadline may stop
+an admitted native query. Production admission, native recovery and API readiness
+remain false; no failed legacy unit was restarted.
