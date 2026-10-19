@@ -1,5 +1,32 @@
 # Ord-Dogecoin preserved archive recovery
 
+## Current checkpoint: 2026-10-19
+
+Live inspection supersedes the initial launch observation below. The storage
+unit is inactive (PID 0), and the indexing unit is failed (PID 0, signal 9).
+The signal alone does not establish its cause. Do not restart the failed unit.
+Diagnose the prior exit and review a guarded successor before any activation.
+
+The retained delta is present at the path below: 393,216 logical bytes and
+364,544 allocated bytes. Read-only QEMU 8.2.2 image information reports qcow2,
+virtual size 2,258,359,144,448 bytes, and the exact preserved original as its raw
+backing file. Its SHA-256 is
+`6dabd4c27c8a0eee1718e7516b693d4c2110f7ce83f4c4b42c0c4d692824954f`.
+The digest stayed unchanged during inspection. No FUSE view is mounted.
+These are storage identity checks, not native database integrity or readiness.
+Preserve the original, delta, runtime and deployment evidence together.
+
+A separate historical disposable full copy is absent; that does not mean this
+qcow2 recovery set is absent. Full-copy admission needs about 1.49 TB more space
+including a 300 GB reserve. That shortfall applies to the full-copy route;
+review the retained sparse-delta route before building a competing backend.
+Delta growth still needs an explicit capacity budget and safe exhaustion policy.
+
+The current archive remains unready. No original was opened with native redb,
+no storage repair/commit/rebase was performed, and no service was started during
+this inspection. Synthetic bounded-journal and unprivileged read-only-view
+fixtures are preparation evidence only. They do not qualify the actual archive.
+
 Recorded 2026-10-16. Both archive storage and indexing units were installed
 and enabled; the deployment receipt records `startup-requested`. At 22:20:10
 UTC the native indexer and QEMU storage backend were active, enabled, and had
@@ -24,7 +51,8 @@ preserved doginals.redb (read only)
 ```
 
 The restored indexers-1 host is `51.222.43.129`; the existing shared
-Dogecoin Core host is `65.21.128.125`. Old host addresses and AWS migration
+Dogecoin Core host is new indexers-2 `51.222.108.117`. The former source
+host was deleted per operator confirmation; never query it. Old host addresses and AWS migration
 instructions in earlier runbooks are historical. Do not start a second Core
 or another Ord-Dogecoin owner to follow those earlier layouts.
 
@@ -59,7 +87,7 @@ new source build.
    index checkpoint hash using only the owned node. Keep existing credentials
    in their protected input files; never print them in logs or shell arguments.
 2. Prove no Ord-Dogecoin process owns this archive or an alternative production
-   index on the former and restored hosts. Match executable and database identity,
+   index on current hosts involved in this recovery. Never query retired hosts. Match executable and database identity,
    rather than rejecting every process named `ord`; independent Bitcoin Signet
    work is a different owner.
 3. Preserve the original archive as read-only backing storage. Do not open it
