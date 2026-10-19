@@ -28,7 +28,12 @@ virtual size 2,258,359,144,448 bytes, and the exact preserved original as its ra
 backing file. Its SHA-256 is
 `6dabd4c27c8a0eee1718e7516b693d4c2110f7ce83f4c4b42c0c4d692824954f`.
 The digest stayed unchanged during inspection. No FUSE view is mounted.
-These are storage identity checks, not native database integrity or readiness.
+A later read-only `qemu-img check -f qcow2 --output=json` completed with exit 0
+and `check-errors=0` in 0.830 seconds. No repair flag was used. Delta SHA-256 and
+base metadata remained unchanged. The reported 34,459,826 virtual clusters are
+an image-layout denominator, not database scan progress; only one data cluster
+is allocated. Never rerun this completed check merely for a fresh timestamp.
+These are storage identity/metadata checks, not native database integrity or readiness.
 Preserve the original, delta, runtime and deployment evidence together.
 
 A separate historical disposable full copy is absent; that does not mean this
