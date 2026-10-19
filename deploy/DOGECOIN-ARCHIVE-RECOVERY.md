@@ -377,3 +377,31 @@ QMP quit and exited 0 before release. The lock was then reacquired successfully.
 No block graph, export or database was created. Completed one-time receipt:
 /home/universe-restore/doge-lifetime-v1-20261019.json; do not rerun. This does
 not establish a production runtime lifetime or archive readiness.
+
+
+### Actual executable Testnet startup boundary
+
+The retained 307,059,112-byte executable was freshly digest-qualified as
+47a9e588a5a102f88427377762d90e977394b96594312f64e8f6ced3662a4372, with
+unchanged metadata. In a private mount and network namespace its executable
+and sidecars were exposed through read-only bind views. It ran with explicit
+Testnet arguments, isolated data/config/cookie paths and a 16 MiB database
+cache, as UID 65534 with no capabilities and no-new-privileges. That UID is a
+fixture identity, not an approved production service account.
+
+The native initialized only a new 3,686,400-byte synthetic database. At its first
+getblockcount request, the local synthetic RPC observer verified the exact
+executable device/inode, the inherited owner-lease descriptor, the unprivileged
+process state, refusal of active-child lease release and refusal of a second
+cooperating owner. The RPC returned a controlled fixture error; native exit 1
+was expected. Lease release followed natural child exit, and the namespace
+exited 0 without signals or service changes. No original archive, retained
+production delta or production RPC was opened.
+
+Completed receipt: /home/universe-restore/doge-native-boundary-v1-20261019.json.
+Do not rerun this one-time scenario. This verifies actual executable startup
+through its first RPC request, not descriptor retention through sustained
+indexing/recovery, actual-archive compatibility or usable API readiness. Keep
+production admission closed until the reviewed lifetime launch guard binds the
+read-only source, capacity policy, dedicated identity and fresh owned RPC to
+the preserved recovery set.
