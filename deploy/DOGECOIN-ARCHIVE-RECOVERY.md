@@ -4,8 +4,23 @@
 
 Live inspection supersedes the initial launch observation below. The storage
 unit is inactive (PID 0), and the indexing unit is failed (PID 0, signal 9).
-The signal alone does not establish its cause. Do not restart the failed unit.
-Diagnose the prior exit and review a guarded successor before any activation.
+The signal alone does not establish its cause. The 2026-10-19 bounded audit
+review found a privileged `systemctl kill` command with an explicit kill-signal
+flag for this unit immediately before the recorded signal-9 exit, followed by
+a stop command. The requesting actor and motivation remain unverified; this
+is administrative-intervention evidence, not native database corruption proof.
+Do not restart the failed unit. Review a guarded successor before activation.
+
+The retained v2 fixture receipt records all five storage/native cases passed:
+unaligned IO/truncate/zero-gap/sync; missing-mount refusal; daemon-loss persistence
+with base unchanged; native recovery/reopen with process-lock exclusion; and
+native recovery persistence after a process crash with unchanged base hash.
+The fixture never opened the original archive. Its native scanner digest is
+`6711b8f9649a543900a2f8639d147beda9f6f2683a1596b32a1a2381f31df779`.
+These completed fixtures were inspected, not rerun. The legacy storage graph
+marks the base file/raw nodes read-only and the overlay file/qcow2 nodes writable.
+Production startup still needs exact live identity, exclusive ownership, current
+owned RPC, capacity exhaustion handling and review of the retained startup guards.
 
 The retained delta is present at the path below: 393,216 logical bytes and
 364,544 allocated bytes. Read-only QEMU 8.2.2 image information reports qcow2,
