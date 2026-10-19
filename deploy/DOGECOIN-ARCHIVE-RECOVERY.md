@@ -556,3 +556,34 @@ the private source view, hard growth limit, free-space protection and owner
 exclusion for the entire lifetime. Recollect fresh evidence under its lease;
 qualify the dedicated group's mounted export and actual native lifetime before
 opening the preserved database. Do not restart the failed legacy unit.
+
+### Lease-bound source mount component, 19 October 2026
+
+`deploy/archive_recovery_source_view.py` adds a reusable supervisor component.
+It requires root in a separate mount namespace with private propagation, safe
+root-owned source/target paths, distinct regular single-link files and a held
+LeaseGroup. It registers the source mount with that group before bind/remount,
+then verifies exact source device/inode/length, mount ID and read-only,
+nosuid/nodev/noexec flags. Every child launched through the component rechecks
+that view. This is not a complete production supervisor or native admission.
+
+LeaseGroup now checks every registered protected mount before releasing its
+lease. Even a partial mount setup blocks release while the mount remains.
+Source teardown requires all tracked children to have exited, repeats mount
+qualification, performs ordinary unmount and confirms absence. There is no
+automatic teardown, forced unmount, child signal or retry on failure.
+
+Two focused Linux tests passed in a new private mount/network namespace:
+root write-only and read-write opens both returned EROFS; a live child blocked
+source unmount; an idle but mounted source blocked lease release; natural child
+exit followed by ordinary source unmount allowed release. Source content and
+inode/size/mtime/ctime were unchanged. A symlink source was refused before mount.
+Windows skipped these two Linux-only tests. Receipt:
+/home/universe-restore/doge-source-view-lifetime-v1-20261019.json, 0.372 seconds.
+This completed synthetic lifecycle test must not be repeated as a fixture.
+
+No preserved source or retained delta was opened, no database native operation
+ran and no production service changed. The actual retained-set runtime gates
+remain closed. Next integrate this component with the exact storage plan,
+capacity protection and exclusive owner policy, then qualify the complete
+successor lifetime before native activation. Preserve all earlier scoped proof.

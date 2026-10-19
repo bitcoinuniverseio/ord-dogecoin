@@ -25,7 +25,16 @@ class LeaseGroup:
         self.mountpoint = os.path.abspath(mountpoint)
         self.lease = OwnerLease(lease_path)
         self.children = {}
+        self.protected_mounts = {self.mountpoint}
         self.lease.__enter__()
+
+    def protect_mount(self, path):
+        """Keep a private source mount within the same lease lifetime."""
+        self._held()
+        path = os.fspath(path)
+        if not os.path.isabs(path) or os.path.normpath(path) != path:
+            raise LifetimeRefused('absolute_mountpoint_required')
+        self.protected_mounts.add(path)
 
     def _held(self):
         if self.lease.fd is None:
@@ -73,7 +82,7 @@ class LeaseGroup:
         for line in pathlib.Path('/proc/self/mountinfo').read_text().splitlines():
             encoded = line.split()[4]
             path = re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), encoded)
-            if path == self.mountpoint:
+            if path in self.protected_mounts:
                 raise LifetimeRefused('mount_still_present')
         self.lease.__exit__()
         return {'lease_released': True, 'tracked_children_exited': True,
