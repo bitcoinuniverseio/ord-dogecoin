@@ -124,9 +124,27 @@ fixture: contention preserves bytes and refuses a second owner; symlinks, hardli
 and a writable parent are rejected. No production lease, native database or service
 was opened by those tests. Do not rerun the completed remote fixture for freshness.
 
-The runtime collector, lifetime lease integration, enforced growth/exhaustion
-handling and guarded successor launcher remain incomplete. The failed legacy unit
-must remain stopped; this module does not authorize a restart.
+A live collector on 2026-10-19 acquired
+`/var/lib/universe-ord-dogecoin-archive/recovery-successor-owner.lock` around its
+snapshot, verified the exact original identity, retained delta and executable
+digests, and reused the completed qcow metadata-check receipt. The executable
+is 307,059,112 bytes; a 256 MiB collector bound first refused it. A corrected
+collector required that exact size and used a 320 MiB streaming-read bound with
+idle IO priority. The first refusal and its evidence remain preserved.
+
+The collector matched the approved SSH forward to an established TCP socket
+on new indexers-2 and verified both authenticated RPC routes agreed at 6,421,264
+blocks/headers, IBD false. Source/delta/runtime identities and unit/route ownership
+were unchanged across collection. The lease was released afterwards; that
+snapshot is not continuing ownership or future fresh RPC evidence.
+
+Preflight correctly refused exactly `source_readonly_verified` and
+`growth_exhaustion_verified`. A live enforced read-only source view and verified
+exhaustion handling are still missing. Its illustrative 600 GB maximum delta
+budget plus 300 GB reserve fits the observed 1.068 TB free space, but arithmetic
+is not enforcement or a prediction of recovery write volume. Runtime lifetime
+lease integration and the guarded successor launcher remain incomplete. The
+failed legacy unit must stay stopped; this collector does not authorize a restart.
 
 ## First-start safety gates
 
