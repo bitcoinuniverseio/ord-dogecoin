@@ -1116,6 +1116,10 @@ impl<'index> Updater<'_> {
       let address_index = true;
 
       for (outpoint, map) in value_cache {
+        #[cfg(feature = "tap")]
+        if self.index.tap_lean && map.1[0] == 0 {
+          continue;
+        }
         outpoint_to_value.insert(&outpoint.store(), map.0)?;
         if address_index && map.1 != [0u8; 34] {
           outpoint_to_address.insert(&outpoint.store(), map.1.as_slice())?;

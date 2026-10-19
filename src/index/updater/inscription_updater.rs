@@ -849,22 +849,26 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'tx> {
         [0u8; 34]
       };
 
-      // Lean replay keeps values only for P2SH outputs, which Doginal reveals
-      // spend; any other value a relevant transaction needs comes over RPC.
+      // Lean replay writes no address index, so the address bytes carry a
+      // persist flag instead: only outputs of transactions with a P2SH output
+      // (Doginal commits, whose P2SH and change outputs reveals spend) are
+      // written at commit. The rest stay in memory until then.
       #[cfg(feature = "tap")]
-      let keep_value = !self.tap_index.tap_lean || tx_out.script_pubkey.is_p2sh();
-      #[cfg(not(feature = "tap"))]
-      let keep_value = true;
+      let address = if self.tap_index.tap_lean {
+        let mut flag = [0u8; 34];
+        flag[0] = u8::from(tx.output.iter().any(|out| out.script_pubkey.is_p2sh()));
+        flag
+      } else {
+        address
+      };
 
-      if keep_value {
-        self.value_cache.insert(
-          OutPoint {
-            vout: vout.try_into().unwrap(),
-            txid,
-          },
-          (tx_out.value, address),
-        );
-      }
+      self.value_cache.insert(
+        OutPoint {
+          vout: vout.try_into().unwrap(),
+          txid,
+        },
+        (tx_out.value, address),
+      );
     }
 
     if is_coinbase {
