@@ -208,7 +208,14 @@ impl<'index> Updater<'_> {
     height: u32,
     starting_height: u32,
   ) {
-    if index.tap_lean && starting_height.saturating_sub(height) > 100 {
+    // redb reuses pages freed by earlier commits only after a durable commit,
+    // so every fourth lean commit stays immediate; with Eventual alone the
+    // file grew by every rewritten page.
+    static LEAN_COMMITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    if index.tap_lean
+      && starting_height.saturating_sub(height) > 100
+      && LEAN_COMMITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 4 != 3
+    {
       wtx.set_durability(redb::Durability::Eventual);
     }
   }
