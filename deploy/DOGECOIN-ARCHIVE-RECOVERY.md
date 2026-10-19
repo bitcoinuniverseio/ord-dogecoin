@@ -427,8 +427,8 @@ export paths; lexical checks alone cannot reject filesystem aliases.
 The builder caps permitted per-file limits at 600 GB; that is a construction
 ceiling, not an approved production budget or a filesystem reservation. Admission
 must separately prove current free space, reserve and actual enforced limit.
-Exports currently use allow-other=off. Unprivileged archive access therefore
-needs a separately reviewed identity/export policy before production use.
+Exports default to allow-other=off. Explicit worker-group access is described
+below; dedicated production account and restored-set integration remain pending.
 
 Three focused tests passed on Windows and Linux. In a new private mount/network
 namespace, the exact generated command mounted a synthetic source-backed FUSE
@@ -441,3 +441,49 @@ No original archive, retained production delta or native database was opened.
 Completed receipt: /home/universe-restore/doge-storage-plan-v1-20261019.json;
 do not rerun. Production launch/admission and unprivileged export access remain
 pending.
+
+
+### Group-restricted private export access
+
+The storage builder now accepts an explicit worker_gid. It enables allow-other
+only after verifying a root-owned 0710 export gateway assigned to that group,
+a root:root 0700 control directory, root-owned safe ancestors, and source, delta
+and QMP paths directly inside control. Root-owned sticky temporary ancestors
+are allowed for isolated fixtures. The default remains owner-only.
+
+QEMU 8.2.2 initializes writable FUSE export attributes as root:root 0600, even
+with allow-other enabled. The first worker probe was therefore denied before
+any native scanner ran. Its failed receipt is preserved. `prepare_worker_export`
+now requires an idle-native callback and an exact live FUSE mount, verifies the
+opened descriptor's device against that same namespace mount instance, then
+sets only the FUSE view's virtual attributes to root:worker-group 0660. Missing
+mounts and active native work refuse permission changes. Source/delta/control
+file permissions are not changed. Caller ownership, exact daemon identity and
+namespace qualification are still required throughout.
+
+The corrected continuation reused the original synthetic daemon and delta; no
+fixture replay or duplicate storage worker was launched. The UID/GID 65534
+worker ran with zero capabilities and no-new-privileges, was denied all four
+source/delta/QMP/lock control opens, but recovered the synthetic database through
+FUSE (exit 2) and reopened cleanly (exit 0). UID 65533 could not open the export.
+Qcow checks reported zero errors and corruptions. The source was protected by
+the private read-only mount; the before/after digest pair was not retained across
+the failed observer, so no digest-comparison claim is made for this scenario.
+
+Completion initially attempted lease reacquisition after mount removal but
+before the daemon closed its last lease descriptor. That race receipt is also
+preserved. A final observer verified the daemon gone, reacquired the lease and
+completed the remaining metadata check without repeating native recovery.
+Always verify actual child exit as well as mount removal before releasing or
+reacquiring ownership. The normal tracked LeaseGroup wait-before-release order
+already enforces this requirement.
+
+Final receipt: /home/universe-restore/doge-private-export-completion-v1-20261019.json.
+Six focused tests passed on Windows and Linux, including refusal before any
+permission change when the native is active or the exact FUSE mount is absent.
+All completed fixture and continuation stages must not be rerun. No original
+archive, retained production delta, production service or production account
+was changed. UID/GID 65534 is a fixture identity; a dedicated production account
+and complete restored-set admission remain pending.
+
+Reference: [QEMU 8.2.2 FUSE implementation](https://raw.githubusercontent.com/qemu/qemu/v8.2.2/block/export/fuse.c).

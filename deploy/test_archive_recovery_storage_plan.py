@@ -1,6 +1,7 @@
 import json
 import unittest
-from archive_recovery_storage_plan import storage_argv
+from unittest.mock import patch
+from archive_recovery_storage_plan import storage_argv, prepare_worker_export
 
 
 class StoragePlanTests(unittest.TestCase):
@@ -28,6 +29,28 @@ class StoragePlanTests(unittest.TestCase):
         for value in [True, 0, -1, 1.5, 262143, 600_000_000_001]:
             with self.subTest(limit=value), self.assertRaises(ValueError):
                 storage_argv('/a', '/d', '/v', '/q', value)
+
+    def test_worker_export_requires_guard_and_explicit_group(self):
+        for gid in [0, True, -1, '65534']:
+            with self.subTest(gid=gid), self.assertRaises(ValueError):
+                storage_argv('/a', '/d', '/v', '/q', 1048576, worker_gid=gid)
+        with self.assertRaisesRegex(ValueError, 'private_control_paths'):
+            storage_argv('/a', '/d', '/private/view', '/q', 1048576, worker_gid=65534)
+        with patch('archive_recovery_storage_plan._worker_export_guard', side_effect=ValueError('private_export_permissions')):
+            with self.assertRaises(ValueError):
+                storage_argv('/private/control/a', '/private/control/d', '/private/view', '/private/control/q', 1048576, worker_gid=65534)
+
+    def test_active_native_prevents_permission_changes(self):
+        with patch('archive_recovery_storage_plan.os.fchown', create=True) as change:
+            with self.assertRaisesRegex(ValueError, 'native_not_idle'):
+                prepare_worker_export('/a', '/d', '/v', '/q', 65534, lambda: False)
+            change.assert_not_called()
+
+    def test_missing_fuse_mount_never_changes_backing_permissions(self):
+        with patch('archive_recovery_storage_plan._worker_export_guard'), patch('archive_recovery_storage_plan._fuse_mount', side_effect=ValueError('exact_fuse_mount_required')), patch('archive_recovery_storage_plan.os.fchown', create=True) as change:
+            with self.assertRaisesRegex(ValueError, 'exact_fuse_mount_required'):
+                prepare_worker_export('/a', '/d', '/v', '/q', 65534, lambda: True)
+            change.assert_not_called()
 
 
 if __name__ == '__main__':
