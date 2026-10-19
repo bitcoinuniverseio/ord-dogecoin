@@ -716,3 +716,58 @@ the persistent recovery supervisor with fresh owner/RPC/capacity checks, bounded
 workspace identity and a conservative I/O admission gate. No deadline may stop
 an admitted native query. Production admission, native recovery and API readiness
 remain false; no failed legacy unit was restarted.
+
+### Guarded native recovery queue deployed, 19 October 2026
+
+The new transient unit
+universe-ord-dogecoin-bounded-native-recovery-v1-20261019.service is active with
+queue PID 1416745. Do not deploy another queue or restart this one. It reuses the
+SAME container and working delta; it never allocates, formats, copies, resets or
+reindexes. It can automatically perform ONE native recovery attempt after its
+launch checks pass. It does not activate the application or announce API health.
+
+`deploy/archive_recovery_io_admission.py` requires three calm observations at
+least 10 seconds apart, with no gap over 20 seconds. Every observation must be
+fresh and finite: I/O PSI avg10 full <=5%, some <=10%, available RAM >=24 GiB,
+host free space >=300 GB plus 256 GiB. Invalid, stale, reversed-clock, pressured
+or low-resource observations reset the window. The gate only controls launch;
+it never pauses or terminates an admitted native process.
+
+After the gate, the queue verifies the current authenticated owned RPC routes
+and actual SSH TCP peer. The isolated job acquires the existing global owner
+lease, checks resource/RPC freshness, scans descriptors and mappings for other
+owners, and verifies pinned original identities/digest, current container
+identity, clean filesystem UUID and the existing working delta. It then uses
+the already-qualified private source, bounded storage and export components.
+
+LeaseGroup.spawn now optionally accepts one native_fd: native role only,
+integer descriptor >=3, regular single-link file, O_RDWR. It passes that exact
+descriptor alongside the lease and closes other inherited descriptors. The
+caller additionally qualifies the export's device/inode/size/permissions. The
+pinned recovery scanner runs as UID981/GID977 with cleared groups/capabilities
+and no-new-privileges. Its wait has NO deadline, signal, kill or retry. Natural
+exit is followed by idle-only acknowledged QMP shutdown and normal unmounts.
+Exit 2 requires inspection; exit 1 is a failed native attempt requiring review,
+never automatic replay. No result automatically enables the application.
+
+The service has Restart=no, KillMode=process, SendSIGKILL=no and infinite stop
+timeout; nice19, idle I/O class, CPU/IO weights1, MemoryMax4GiB. Children inherit
+the global lease; a supervisor failure must not prompt replacement or signals
+without inspecting current PIDs and receipts. Do not stop or restart the unit
+as a status check. Preserve any partial working delta and owned query.
+
+Maintained deployed sources: archive_recovery_native_queue.py and
+archive_recovery_native_job.py. Deployed queue SHA-256:
+5cff77f0cd94968c719e930f3e25d9624dafaf58e0c833cbf695eb0f1bda49eb;
+job SHA-256: 548ba867409d31cc07aa1481ab963d034019d8822cbc522bf9a8d87525ac121c.
+Five policy tests passed on Windows; two Linux descriptor tests skipped there.
+All seven passed on I1 before deployment. Fresh status verified the unit active,
+7.24 MB memory, waiting 0/3 calm samples, native opens0; I/O full29.81%/some30.35%.
+These PSI values are stall samples, not recovery progress or causal attribution.
+
+Live receipt: /home/universe-restore/doge-bounded-native-recovery-v1-20261019.json.
+Deployment receipt: doge-native-queue-deployment-v1-20261019.json in the same
+directory. Private control: /var/lib/universe-ord-dogecoin-native-v1-20261019/control;
+phase.private.json records owned storage/native PIDs after admission. Read live
+receipts and PIDs FIRST on continuation. No database native open has occurred
+at this checkpoint; actual native validation, API and indexing remain pending.

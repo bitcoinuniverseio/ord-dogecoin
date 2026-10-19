@@ -9,6 +9,7 @@ import os
 import pathlib
 import re
 import subprocess
+import stat
 
 from archive_recovery_admission import OwnerLease
 from archive_recovery_qmp import acknowledged_quit
@@ -43,15 +44,25 @@ class LeaseGroup:
         if (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
             raise LifetimeRefused('lease_path_changed')
 
-    def spawn(self, role, argv, *, stdin=None, stdout=None, stderr=None):
+    def spawn(self, role, argv, *, stdin=None, stdout=None, stderr=None, native_fd=None):
         """Only callers with completed admission may supply production argv."""
         self._held()
         if role not in ('storage', 'native') or role in self.children:
             raise LifetimeRefused('role_already_used_or_invalid')
         if not isinstance(argv, (list, tuple)) or not argv or not all(isinstance(x, str) for x in argv):
             raise LifetimeRefused('argv')
+        descriptors = (self.lease.fd,)
+        if native_fd is not None:
+            import fcntl
+            if role != 'native' or type(native_fd) is not int or native_fd < 3:
+                raise LifetimeRefused('native_descriptor_guard')
+            s = os.fstat(native_fd)
+            if (not stat.S_ISREG(s.st_mode) or s.st_nlink != 1
+                    or fcntl.fcntl(native_fd, fcntl.F_GETFL) & os.O_ACCMODE != os.O_RDWR):
+                raise LifetimeRefused('native_descriptor_guard')
+            descriptors += (native_fd,)
         process = subprocess.Popen(argv, stdin=stdin, stdout=stdout, stderr=stderr,
-                                   close_fds=True, pass_fds=(self.lease.fd,))
+                                   close_fds=True, pass_fds=descriptors)
         self.children[role] = process
         return process
 
