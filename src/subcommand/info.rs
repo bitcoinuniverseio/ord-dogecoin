@@ -34,6 +34,8 @@ impl Info {
       }
       Ok(Box::new(output))
     } else {
+      // main() discards subcommand output in this fork, so print it here.
+      println!("{}", serde_json::to_string_pretty(&info)?);
       Ok(Box::new(info))
     }
   }
