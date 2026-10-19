@@ -206,6 +206,15 @@ pub(crate) struct Info {
   pub(crate) transactions: Vec<TransactionInfo>,
   pub(crate) tree_height: u32,
   pub(crate) utxos_indexed: u64,
+  pub(crate) tables: std::collections::BTreeMap<String, TableSize>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct TableSize {
+  pub(crate) entries: u64,
+  pub(crate) stored_bytes: u64,
+  pub(crate) leaf_pages: u64,
+  pub(crate) fragmented_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -656,7 +665,39 @@ impl Index {
           )
         })
         .collect::<Result<Vec<_>, _>>()?;
+      let mut tables = std::collections::BTreeMap::new();
+      for handle in rtx.list_tables()? {
+        use redb::TableHandle;
+        let name = handle.name().to_string();
+        let table = rtx.open_untyped_table(handle)?;
+        let table_stats = table.stats()?;
+        tables.insert(
+          name,
+          TableSize {
+            entries: table.len()?,
+            stored_bytes: table_stats.stored_bytes(),
+            leaf_pages: table_stats.leaf_pages(),
+            fragmented_bytes: table_stats.fragmented_bytes(),
+          },
+        );
+      }
+      for handle in rtx.list_multimap_tables()? {
+        use redb::MultimapTableHandle;
+        let name = handle.name().to_string();
+        let table = rtx.open_untyped_multimap_table(handle)?;
+        let table_stats = table.stats()?;
+        tables.insert(
+          name,
+          TableSize {
+            entries: table.len()?,
+            stored_bytes: table_stats.stored_bytes(),
+            leaf_pages: table_stats.leaf_pages(),
+            fragmented_bytes: table_stats.fragmented_bytes(),
+          },
+        );
+      }
       Info {
+        tables,
         index_path: self.path.clone(),
         blocks_indexed: rtx
           .open_table(HEIGHT_TO_BLOCK_HASH)?
