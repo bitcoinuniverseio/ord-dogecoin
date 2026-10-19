@@ -316,3 +316,31 @@ application writes or large-archive recovery. Production admission stays closed
 until lifetime source-view/lease/limit enforcement, dedicated worker identity,
 capacity reserve policy and native application readiness are integrated and
 reviewed. Preserve the original archive and its existing delta throughout.
+
+
+### Reusable acknowledged QMP shutdown transport
+
+`deploy/archive_recovery_qmp.py` now provides `acknowledged_quit` for a fresh
+connected Linux Unix socket. It validates the expected peer PID via SO_PEERCRED,
+requires a trusted idle-owner callback before negotiation and again immediately
+before quit, and matches command IDs while awaiting the quit response. One
+monotonic deadline bounds the exchange; response buffers and asynchronous events
+are bounded. EOF, peer errors, malformed responses, mismatched IDs or timeout
+produce fixed refusal labels without exposing peer payloads. The socket timeout
+is restored, and the caller retains ownership of the connection.
+
+This helper is transport only. Its idle callback is caller policy, not proof
+created by the helper. A reviewed lifecycle caller must retain its lease, qualify
+the daemon identity and native-client exit, then verify process exit and mount
+removal after acknowledgment. An unresolved exchange must not trigger automatic
+retry or signals. The helper does not start services, send process signals or
+open databases; a successful response does not establish native readiness.
+
+Focused tests cover event interleaving, missing/error replies, changed idle
+ownership, wrong IDs, deadlines, response bounds, event floods and actual Linux
+peer identity. Windows protocol tests passed 8 cases with 2 Linux-only cases
+skipped; initial missing-AF_UNIX handling was corrected to a guarded refusal.
+I1 passed all 10 cases and one exact-PID, no-data QEMU daemon exchange: quit was
+acknowledged and the daemon exited 0, with no block graph, export or database.
+The one-time Linux receipt is /home/universe-restore/doge-qmp-helper-v1-20261019.json.
+Do not rerun that completed fixture. Production lifecycle integration is pending.
