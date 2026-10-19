@@ -487,3 +487,40 @@ was changed. UID/GID 65534 is a fixture identity; a dedicated production account
 and complete restored-set admission remain pending.
 
 Reference: [QEMU 8.2.2 FUSE implementation](https://raw.githubusercontent.com/qemu/qemu/v8.2.2/block/export/fuse.c).
+
+
+### Dedicated I1 archive worker identity
+
+The service identity universe-doge-archive now exists on I1 as UID 981, GID 977.
+It was created only after exact-host checks confirmed the account/group absent
+and the legacy archive unit stopped. The account has /usr/sbin/nologin, a locked
+authentication field, no home directory and no provisioned password or SSH key.
+Its primary group is exclusive, and it has no supplementary group memberships.
+All pre-existing passwd, shadow, group and gshadow records were verified
+unchanged. No native worker, legacy unit or database was started.
+
+The initial preparation script stopped at a missing sys import before account
+inspection or mutation; its corrected version repeated fresh absence guards
+and performed creation once. Do not rerun either creation script. Receipt:
+/home/universe-restore/doge-dedicated-worker-identity-v1-20261019.json.
+
+`deploy/archive_recovery_identity.py` now pins this identity and I1 machine ID.
+Its read-only inspect_identity audit exposes only qualification flags, never a
+shadow value. assess_identity rejects changed host/name/UID/GID, shared groups,
+supplementary memberships, login-capable shell, home creation, enabled password
+authentication or an old/future/nonfinite audit. worker_argv reaudits locally
+before constructing setpriv with cleared groups, capabilities and ambient
+privileges, plus no-new-privileges. It does not grant production admission.
+
+Five focused tests passed on Windows and Linux. The generated argv also ran
+a real no-data process as UID 981/GID 977, groups empty, capabilities zero and
+no-new-privileges enabled. The identity was reaudited before and after. One-time
+audit/probe receipt: /home/universe-restore/doge-identity-audit-v1-20261019.json;
+do not rerun the completed fixture. Future production preparation may use the
+read-only audit, not account creation.
+
+Bind the dedicated group into a new private export gateway and qualify the
+complete preserved recovery set, fresh owned RPC, hard growth budget and lifetime
+owner before native activation. The existing original/delta ownership and failed
+legacy unit are unchanged; production integration and archive readiness remain
+pending. This identity is I1-specific and must not be assumed valid on new2.
