@@ -771,3 +771,37 @@ directory. Private control: /var/lib/universe-ord-dogecoin-native-v1-20261019/co
 phase.private.json records owned storage/native PIDs after admission. Read live
 receipts and PIDs FIRST on continuation. No database native open has occurred
 at this checkpoint; actual native validation, API and indexing remain pending.
+
+### Live queue reporting replaces deployment snapshots, 19 October 2026
+
+`deploy/archive_recovery_reporting.py` interprets fresh unit, receipt, phase and
+process observations. Deployment success never proves native or API readiness.
+The native-open count takes the higher valid receipt/phase count so an exception
+cannot hide an admitted attempt. A live pinned scanner in the expected cgroup
+with the inherited global lease takes precedence over a stopped supervisor;
+report it as owned native work and preserve it. A reused or unqualified PID
+requires inspection. The adapter never authorizes signals or restarts.
+
+Queued resource wait remains native0%. An observed owned native process uses
+an explicitly estimated native stage10%, never an I/O-derived scan percentage.
+Exit1 is failed and requires inspection with the copy preserved; exit2 remains
+inspection-pending at an estimated qualification stage80%. Native integrity100%
+requires clean exit0 plus clean metadata, acknowledged storage exit0, removal of
+all protected mounts, loop detach and lease release. Application readiness stays
+false and application activation0% in every adapter state. Stale, future,
+boolean or nonfinite observations are refused rather than repeated as current.
+
+The read-only status helper qualifies scanner/QEMU executable identity, expected
+cgroup and inherited lease descriptor when those PIDs exist. It deliberately
+does not stat the FUSE export or join its I/O queue. It reads no native data and
+does not alter the running worker. Nine focused Windows reporting tests passed,
+including supervisor loss with a live owner, PID reuse, preserved phase counters,
+exit2, incomplete storage shutdown, malformed timestamps and false success.
+
+Continuation order: destination-only recorder first, then run
+work/record-doge-native-queue-live-20261019.py serially before rendering the
+migration report. It invokes the existing read-only I1 status helper and saves
+work/doge-native-queue-live-20261019.json. The report now uses this live snapshot
+through the maintained adapter, overriding historical preparation receipts.
+Observations older than 120 seconds are explicitly dated and require refresh.
+No native worker restart, fixture, copy or initialization accompanied this change.
