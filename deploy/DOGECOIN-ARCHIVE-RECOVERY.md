@@ -344,3 +344,36 @@ I1 passed all 10 cases and one exact-PID, no-data QEMU daemon exchange: quit was
 acknowledged and the daemon exited 0, with no block graph, export or database.
 The one-time Linux receipt is /home/universe-restore/doge-qmp-helper-v1-20261019.json.
 Do not rerun that completed fixture. Production lifecycle integration is pending.
+
+
+### Cooperating-owner child lifetime primitive
+
+`deploy/archive_recovery_lifetime.py` provides a single-supervisor `LeaseGroup`.
+It acquires the guarded `OwnerLease`, tracks one storage and one native child,
+and passes the same lock descriptor across child exec. This preserves the
+cooperating-owner lock after a supervisor exit while a child retains that
+descriptor. Role reuse is refused. Wait deadlines preserve the child. There is
+no automatic context-manager cleanup, signal, terminate, kill or service action.
+
+Storage quit requires a tracked live storage child and every tracked native
+child to have exited; the QMP transport repeats that guard before issuing quit.
+Lease release requires all tracked children exited and the exact mountpoint
+absent from current mountinfo. The lock file is preserved. Callers must retain
+the group on errors and observe existing children rather than duplicate them.
+
+The API is a lifetime primitive, not a production admission or launch command.
+Before supplying production arguments, the reviewed caller still must qualify
+the executable, storage graph, private namespace, read-only source, dedicated
+worker identity, enforced capacity policy, current owned RPC and external-owner
+exclusion. Each actual executable must preserve the inherited descriptor; a
+child that closes it cannot provide supervisor-exit lock protection. The
+production archive executable has not yet passed that qualification.
+
+Three Linux tests passed: active child blocks lease release and wait timeout
+preserves it; active native blocks QMP shutdown before transport; supervisor
+exit leaves the lock held until its synthetic child exits. A real empty QEMU
+daemon inherited the same lease descriptor, blocked a second owner, acknowledged
+QMP quit and exited 0 before release. The lock was then reacquired successfully.
+No block graph, export or database was created. Completed one-time receipt:
+/home/universe-restore/doge-lifetime-v1-20261019.json; do not rerun. This does
+not establish a production runtime lifetime or archive readiness.
