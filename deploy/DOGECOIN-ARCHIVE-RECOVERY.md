@@ -587,3 +587,41 @@ ran and no production service changed. The actual retained-set runtime gates
 remain closed. Next integrate this component with the exact storage plan,
 capacity protection and exclusive owner policy, then qualify the complete
 successor lifetime before native activation. Preserve all earlier scoped proof.
+
+### Filesystem exhaustion and same-delta recovery, 19 October 2026
+
+A new isolated capacity test exercised actual filesystem exhaustion rather than
+the earlier file-length ceiling. A 256 KiB private tmpfs held a new synthetic
+QCOW delta behind the read-only synthetic source. The exact storage argv used a
+16 MiB hard file limit, so the filesystem exhausted first. Native recovery exited
+1 with IO diagnostics; retained numeric diagnostics independently confirmed
+ENOSPC (errno 28 twice). Free filesystem space reached zero. The delta's logical
+length was 323,584 bytes; sparse logical length can exceed allocated capacity.
+
+Acknowledged QMP shutdown exited normally. QCOW metadata checks reported zero
+errors and corruptions. The SAME private filesystem was expanded to 16 MiB;
+the SAME delta then returned recovery exit 2, followed by clean-integrity reopen
+exit 0. No native operation was replayed or signalled. All three storage phases
+used acknowledged shutdown and verified daemon exit plus FUSE mount removal.
+The synthetic source digest stayed unchanged. Total isolated runtime: 0.353 s.
+
+Receipts: /home/universe-restore/doge-physical-enospc-v1-20261019.json and
+doge-physical-enospc-diagnostics-v1-20261019.json. The diagnostic observer only
+extracted numeric errno codes from retained output; it performed no native
+execution. This completed fixture must not be rerun. Original archive opens,
+retained production delta opens, production service changes and native signals
+were all zero. This qualifies the tiny tmpfs exhaustion/recovery scenario, not
+production media failure, large-archive recovery or a live disk reservation.
+
+A separate read-only capacity audit found I1's retained delta on the ext4 root
+filesystem, device 2307, with project/user quota mount options absent. Available
+space was 1,063,359,078,400 bytes; retained delta logical/allocated sizes remained
+393,216/364,544 bytes. Receipt: doge-capacity-layout-v1-20261019.json. No mount,
+quota or filesystem configuration changed and no reservation was created.
+
+Production capacity protection remains pending. Do not label a file-size limit,
+snapshot free-space arithmetic or the synthetic tmpfs proof as a shared-disk
+reservation. Next review bounded storage allocation and the required reserve
+against live production growth, without remounting the live root filesystem or
+interrupting its services. Integrate the resulting policy with the lease-bound
+source view and exact storage plan before preserved-set native admission.
