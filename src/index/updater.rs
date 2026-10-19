@@ -564,7 +564,9 @@ impl<'index> Updater<'_> {
     map: Arc<Mutex<HashMap<OutPoint, u64>>>,
   ) -> Result<std::sync::mpsc::Sender<Vec<OutPoint>>> {
     let fetcher = Fetcher::new(&index.rpc_url, index.auth.clone())?;
-    let parallel = index.nr_parallel_requests.max(1);
+    // A quarter of the request budget: block and per-block value fetches
+    // already hold most connections, and a syncing node refuses new ones.
+    let parallel = (index.nr_parallel_requests / 4).max(1);
     let (sender, receiver) = std::sync::mpsc::channel::<Vec<OutPoint>>();
     thread::spawn(move || {
       let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
