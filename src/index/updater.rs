@@ -59,6 +59,12 @@ pub(crate) struct Updater<'index> {
   outputs_cached: u64,
   outputs_inserted_since_flush: u64,
   outputs_traversed: u64,
+  /// Lean replay lookahead: input values fetched ahead of the blocks waiting
+  /// in the fetch queue, so a block rarely waits for a node round trip.
+  #[cfg(feature = "tap")]
+  tap_lookahead: Arc<Mutex<HashMap<OutPoint, u64>>>,
+  #[cfg(feature = "tap")]
+  tap_lookahead_sender: Option<std::sync::mpsc::Sender<Vec<OutPoint>>>,
 }
 
 impl<'index> Updater<'_> {
@@ -71,6 +77,10 @@ impl<'index> Updater<'_> {
       outputs_cached: 0,
       outputs_inserted_since_flush: 0,
       outputs_traversed: 0,
+      #[cfg(feature = "tap")]
+      tap_lookahead: Arc::new(Mutex::new(HashMap::new())),
+      #[cfg(feature = "tap")]
+      tap_lookahead_sender: None,
     })
   }
 
@@ -109,9 +119,46 @@ impl<'index> Updater<'_> {
 
     let (mut outpoint_sender, mut value_receiver) = Self::spawn_fetcher(self.index)?;
 
+    #[cfg(feature = "tap")]
+    if self.index.tap_lean && self.tap_lookahead_sender.is_none() {
+      self.tap_lookahead_sender = Some(Self::spawn_tap_lookahead(
+        self.index,
+        self.tap_lookahead.clone(),
+      )?);
+    }
+
     let mut uncommitted = 0;
     let mut value_cache = HashMap::new();
-    while let Ok(block) = rx.recv() {
+    let mut ahead: std::collections::VecDeque<BlockData> = std::collections::VecDeque::new();
+    #[cfg(feature = "tap")]
+    let mut scanned_ahead = 0usize;
+    loop {
+      let block = match ahead.pop_front() {
+        Some(block) => {
+          #[cfg(feature = "tap")]
+          {
+            scanned_ahead = scanned_ahead.saturating_sub(1);
+          }
+          block
+        }
+        None => match rx.recv() {
+          Ok(block) => block,
+          Err(_) => break,
+        },
+      };
+      #[cfg(feature = "tap")]
+      if self.tap_lookahead_sender.is_some() {
+        while ahead.len() < 32 {
+          match rx.try_recv() {
+            Ok(next) => ahead.push_back(next),
+            Err(_) => break,
+          }
+        }
+        if scanned_ahead < ahead.len() {
+          self.tap_lookahead_scan(&mut wtx, &block, &ahead, scanned_ahead, &value_cache)?;
+          scanned_ahead = ahead.len();
+        }
+      }
       self.index_block(
         self.index,
         &mut outpoint_sender,
@@ -508,6 +555,116 @@ impl<'index> Updater<'_> {
     }
   }
 
+  /// Background fetcher for the lean lookahead: values land in `map` keyed by
+  /// outpoint, so a speculative or late answer can never be consumed out of
+  /// order (the per-block fetcher returns values strictly in request order).
+  #[cfg(feature = "tap")]
+  fn spawn_tap_lookahead(
+    index: &Index,
+    map: Arc<Mutex<HashMap<OutPoint, u64>>>,
+  ) -> Result<std::sync::mpsc::Sender<Vec<OutPoint>>> {
+    let fetcher = Fetcher::new(&index.rpc_url, index.auth.clone())?;
+    let parallel = index.nr_parallel_requests.max(1);
+    let (sender, receiver) = std::sync::mpsc::channel::<Vec<OutPoint>>();
+    thread::spawn(move || {
+      let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
+        Ok(runtime) => runtime,
+        Err(err) => {
+          log::warn!("tap lookahead disabled: {err}");
+          return;
+        }
+      };
+      while let Ok(mut outpoints) = receiver.recv() {
+        while outpoints.len() < 20_000 {
+          match receiver.try_recv() {
+            Ok(more) => outpoints.extend(more),
+            Err(_) => break,
+          }
+        }
+        let chunk = outpoints.len() / parallel + 1;
+        let result = runtime.block_on(try_join_all(outpoints.chunks(chunk).map(|chunk| {
+          fetcher.get_transactions(chunk.iter().map(|outpoint| outpoint.txid).collect())
+        })));
+        match result {
+          Ok(txs) => {
+            let mut map = map.lock().unwrap();
+            if map.len() > 2_000_000 {
+              map.clear();
+            }
+            for (outpoint, tx) in outpoints.iter().zip(txs.iter().flatten()) {
+              if let Some(output) = usize::try_from(outpoint.vout)
+                .ok()
+                .and_then(|vout| tx.output.get(vout))
+              {
+                map.insert(*outpoint, output.value);
+              }
+            }
+          }
+          Err(err) => log::warn!("tap lookahead fetch failed: {err}"),
+        }
+      }
+    });
+    Ok(sender)
+  }
+
+  /// Requests, ahead of time, the input values the queued blocks will need:
+  /// inputs of transactions that move a currently known inscription or may
+  /// inscribe, whose values are neither stored nor created within the queue.
+  #[cfg(feature = "tap")]
+  fn tap_lookahead_scan(
+    &self,
+    wtx: &mut WriteTransaction,
+    current: &BlockData,
+    ahead: &std::collections::VecDeque<BlockData>,
+    from: usize,
+    value_cache: &HashMap<OutPoint, OutPointMapValue>,
+  ) -> Result {
+    let Some(sender) = &self.tap_lookahead_sender else {
+      return Ok(());
+    };
+    let queued: HashSet<Txid> = std::iter::once(current)
+      .chain(ahead.iter())
+      .flat_map(|block| block.txdata.iter().map(|(_, txid)| *txid))
+      .collect();
+    let satpoints = wtx.open_table(SATPOINT_TO_INSCRIPTION_ID)?;
+    let partials = wtx.open_table(PARTIAL_TXID_TO_INSCRIPTION_TXIDS)?;
+    let values = wtx.open_table(OUTPOINT_TO_VALUE)?;
+    let known = self.tap_lookahead.lock().unwrap().len();
+    let mut wanted = Vec::new();
+    for block in ahead.iter().skip(from) {
+      for (tx, _) in block.txdata.iter().skip(1) {
+        let mut relevant = false;
+        for input in &tx.input {
+          if Index::inscriptions_on_output(&satpoints, input.previous_output)?
+            .next()
+            .is_some()
+          {
+            relevant = true;
+            break;
+          }
+        }
+        if !relevant && !InscriptionUpdater::tap_lean_may_inscribe(&partials, tx)? {
+          continue;
+        }
+        for input in &tx.input {
+          let outpoint = input.previous_output;
+          if outpoint.is_null()
+            || queued.contains(&outpoint.txid)
+            || value_cache.contains_key(&outpoint)
+            || values.get(&outpoint.store())?.is_some()
+          {
+            continue;
+          }
+          wanted.push(outpoint);
+        }
+      }
+    }
+    if !wanted.is_empty() && known < 2_000_000 {
+      let _ = sender.send(wanted);
+    }
+    Ok(())
+  }
+
   fn spawn_fetcher(index: &Index) -> Result<(Sender<OutPoint>, Receiver<u64>)> {
     let fetcher = Fetcher::new(&index.rpc_url, index.auth.clone())?;
 
@@ -714,6 +871,12 @@ impl<'index> Updater<'_> {
           // We don't need input values we already have in our outpoint_to_value table from earlier blocks that
           // were committed to db already
           if outpoint_to_value.get(&prev_output.store())?.is_some() {
+            continue;
+          }
+          // A value the lookahead already fetched needs no round trip.
+          #[cfg(feature = "tap")]
+          if let Some(value) = self.tap_lookahead.lock().unwrap().remove(&prev_output) {
+            value_cache.insert(prev_output, (value, [0u8; 34]));
             continue;
           }
           // We don't know the value of this tx input. Send this outpoint to background thread to be fetched
