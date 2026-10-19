@@ -1460,3 +1460,44 @@ pub(crate) fn tap_prune(database: &Database) -> Result {
   wtx.commit()?;
   Ok(())
 }
+
+/// One-off lean replay maintenance (`--tap-restore-values <BACKUP>`): copies
+/// stored output values back from an earlier copy of the index, so inputs
+/// spent after `--tap-prune` do not each cost a node round trip. Values of
+/// outputs spent since the backup stay as unused rows.
+#[cfg(feature = "tap")]
+pub(crate) fn tap_restore_values(database: &Database, backup: &Path) -> Result {
+  let backup = Database::builder()
+    .set_cache_size(1 << 30)
+    .open(backup)
+    .with_context(|| format!("failed to open backup index {}", backup.display()))?;
+  let rtx = backup.begin_read()?;
+  let source = rtx.open_table(OUTPOINT_TO_VALUE)?;
+  let mut copied = 0u64;
+  let mut batch: Vec<(OutPointValue, u64)> = Vec::with_capacity(1_000_000);
+  let mut flush = |batch: &mut Vec<(OutPointValue, u64)>| -> Result {
+    let mut wtx = database.begin_write()?;
+    wtx.set_durability(redb::Durability::Immediate);
+    {
+      let mut values = wtx.open_table(OUTPOINT_TO_VALUE)?;
+      for (outpoint, value) in batch.iter() {
+        values.insert(outpoint, value)?;
+      }
+    }
+    wtx.commit()?;
+    batch.clear();
+    Ok(())
+  };
+  for row in source.iter()? {
+    let (outpoint, value) = row?;
+    batch.push((*outpoint.value(), value.value()));
+    copied += 1;
+    if batch.len() == 1_000_000 {
+      flush(&mut batch)?;
+      log::info!("tap-restore-values: {copied} values copied");
+    }
+  }
+  flush(&mut batch)?;
+  log::info!("tap-restore-values: done, {copied} values copied");
+  Ok(())
+}
