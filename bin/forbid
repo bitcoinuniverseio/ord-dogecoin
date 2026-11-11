@@ -6,6 +6,7 @@ if command -v rg > /dev/null; then
   ! rg \
     --glob '!bin/forbid' \
     --glob '!docs/src/bounty/frequency.tsv' \
+    --glob '!crates/tap_re2/vendor/**' \
     --ignore-case \
     'dbg!|fixme|todo|xxx' \
     .
@@ -19,5 +20,6 @@ else
     -- \
     . \
     ':(exclude)bin/forbid' \
-    ':(exclude)docs/src/bounty/frequency.tsv'
+    ':(exclude)docs/src/bounty/frequency.tsv' \
+    ':(exclude)crates/tap_re2/vendor/**'
 fi
