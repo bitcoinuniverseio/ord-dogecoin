@@ -9,12 +9,13 @@
 use {
   bitcoin::{blockdata::script::Builder, hashes::Hash, Network, Script, Txid},
   executable_path::executable_path,
+  redb::{Database, TableDefinition},
   reqwest::{blocking::Client, header},
   serde_json::Value,
   std::{
     fs,
     net::TcpListener,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -70,18 +71,14 @@ impl Chain {
     }
   }
 
-  fn serve(&self) -> Server {
-    let port = TcpListener::bind("127.0.0.1:0")
-      .unwrap()
-      .local_addr()
-      .unwrap()
-      .port();
-    let child = Command::new(executable_path("ord"))
+  fn ord(&self, data_dir: &Path) -> Command {
+    let mut command = Command::new(executable_path("ord"));
+    command
       .arg("--chain=regtest")
       .arg("--rpc-url")
       .arg(self.rpc.url())
       .arg("--data-dir")
-      .arg(self.tempdir.path())
+      .arg(data_dir)
       .arg("--cookie-file")
       .arg(&self.cookie)
       .arg("--index-transactions")
@@ -89,7 +86,25 @@ impl Chain {
       .env("SUBSIDIES_PATH", repository_file("subsidies.json"))
       .env("STARTING_SATS_PATH", repository_file("starting_sats.json"))
       .stdout(Stdio::null())
-      .stderr(Stdio::null())
+      .stderr(Stdio::null());
+    command
+  }
+
+  /// Index to the node's tip and exit, leaving the database closed cleanly
+  /// so a test can open it.
+  fn index_once(&self, data_dir: &Path) {
+    let status = self.ord(data_dir).arg("index").status().unwrap();
+    assert!(status.success(), "ord index failed");
+  }
+
+  fn serve(&self) -> Server {
+    let port = TcpListener::bind("127.0.0.1:0")
+      .unwrap()
+      .local_addr()
+      .unwrap()
+      .port();
+    let child = self
+      .ord(self.tempdir.path())
       .arg("server")
       .arg("--address")
       .arg("127.0.0.1")
@@ -523,4 +538,83 @@ fn the_batch_output_route_is_labelled_json() {
   let (status, content_type, _) = server.get("/blocks/0/2", None).unwrap();
   assert_eq!(status, 200);
   assert_eq!(content_type.as_deref(), Some("application/json"));
+}
+
+/// A reorg must roll back every statistic the savepoint holds. `LostSats`
+/// positions each lost inscription, so if the orphaned block's lost sats
+/// survive the rollback, a later lost inscription lands at a different offset
+/// than on an index that only ever saw the active chain.
+#[test]
+fn a_reorg_rolls_lost_sats_back_to_the_active_chain() {
+  let chain = Chain::new();
+  let rpc = &chain.rpc;
+  let reorged_dir = chain.tempdir.path();
+  rpc.mine_blocks(2);
+
+  // Index first, so the database holds a savepoint below the fork point.
+  chain.index_once(reorged_dir);
+
+  // A coinbase that claims nothing loses the whole block reward.
+  rpc.mine_blocks_with_subsidy(1, 0);
+  chain.index_once(reorged_dir);
+
+  // Replace that block with two ordinary ones. The next run rolls back.
+  rpc.invalidate_tip();
+  rpc.mine_blocks(2);
+
+  // An inscription paid entirely as fee to a coinbase that claims nothing is
+  // lost, at an offset derived from the sats lost before it.
+  let txid = rpc.broadcast_tx(TransactionTemplate {
+    inputs: &[(1, 0, 0)],
+    fee: 50 * 100_000_000,
+    script_sig: inscription_script("text/plain;charset=utf-8", "hello from a lost doginal"),
+    ..Default::default()
+  });
+  rpc.mine_blocks_with_subsidy(1, 0);
+  chain.index_once(reorged_dir);
+  let reorged = lost_inscription_offset(reorged_dir, txid);
+
+  let clean_dir = TempDir::new().unwrap();
+  chain.index_once(clean_dir.path());
+  let replayed = lost_inscription_offset(clean_dir.path(), txid);
+
+  assert_eq!(reorged, replayed);
+}
+
+/// The detail route cannot answer for a lost inscription, so read its
+/// satpoint and the `LostSats` statistic from the stopped server's database.
+fn lost_inscription_offset(data_dir: &Path, txid: Txid) -> (u64, u64) {
+  const INSCRIPTION_ID_TO_SATPOINT: TableDefinition<&[u8; 36], &[u8; 44]> =
+    TableDefinition::new("INSCRIPTION_ID_TO_SATPOINT");
+  const STATISTIC_TO_COUNT: TableDefinition<u64, u64> = TableDefinition::new("STATISTIC_TO_COUNT");
+  /// Key in `STATISTIC_TO_COUNT`, from `Statistic` declaration order.
+  const STATISTIC_LOST_SATS: u64 = 4;
+
+  let database = Database::open(data_dir.join("regtest").join("index.redb")).unwrap();
+  let rtx = database.begin_read().unwrap();
+
+  let mut id = [0; 36];
+  id[..32].copy_from_slice(txid.as_inner());
+  let satpoint = rtx
+    .open_table(INSCRIPTION_ID_TO_SATPOINT)
+    .unwrap()
+    .get(&id)
+    .unwrap()
+    .unwrap()
+    .value()
+    .to_owned();
+  // Consensus encoding: txid, vout, offset.
+  assert_eq!(satpoint[..32], [0; 32], "the inscription is not lost");
+  assert_eq!(satpoint[32..36], u32::MAX.to_le_bytes());
+  let offset = u64::from_le_bytes(satpoint[36..].try_into().unwrap());
+
+  let lost_sats = rtx
+    .open_table(STATISTIC_TO_COUNT)
+    .unwrap()
+    .get(&STATISTIC_LOST_SATS)
+    .unwrap()
+    .unwrap()
+    .value();
+
+  (offset, lost_sats)
 }
